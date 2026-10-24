@@ -8,7 +8,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::Open($archive, [IO.Compression.ZipArchiveMode]::Create)
 try {
     $files = @('README.md', 'NOTICE.md', 'pyproject.toml', '.gitignore', 'config.example.json')
-    foreach ($folder in @('src', 'tests', 'scripts', 'docs', '.github')) {
+    foreach ($folder in @('src', 'tests', 'scripts', 'docs', '.github', 'dsh-plugin')) {
         $base = Join-Path $project $folder
         if (Test-Path -LiteralPath $base) {
             $files += Get-ChildItem -LiteralPath $base -File -Recurse |

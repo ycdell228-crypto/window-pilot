@@ -1,0 +1,22 @@
+{
+  "name": "window-pilot-dsh",
+  "version": "0.1.0",
+  "description": "Window Pilot：指定窗口截图、后台点击与管理员程序启动，复用本机 MCP 服务。",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*": "./locale/*"
+  },
+  "files": ["index.js", "cordis.patch.yml", "locale", "README.md", "LICENSE"],
+  "license": "MIT",
+  "engines": {"node": ">=22.15"},
+  "peerDependencies": {"@deepseek-ai/dsh-mcp-client": ">=0.2.1-rc.2"},
+  "peerDependenciesMeta": {"@deepseek-ai/dsh-mcp-client": {"optional": true}},
+  "dsh": {
+    "manifestVersion": 1,
+    "engines": {"dsh": ">=0.2.1-rc.2"},
+    "bundle": {"patch": "./cordis.patch.yml"}
+  }
+}

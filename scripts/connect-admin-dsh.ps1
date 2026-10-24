@@ -27,7 +27,7 @@ foreach ($candidate in [regex]::Matches($text.Substring($begin + $matches[0].Len
     if ($candidate.Groups['indent'].Value.Length -le $indent) { $end = $begin + $matches[0].Length + $candidate.Index; break }
 }
 $block = $text.Substring($begin,$end-$begin)
-if ($block -notmatch "name: ['`"]?@deepseek-ai/dsh-mcp-client" -or $block -notmatch 'serverName: *window_pilot' -or $block -notmatch 'transport: *stdio') { throw 'Unexpected plugin type/namespace/transport; inspect manually' }
+if ($block -notmatch "name: ['`"]?(?:@deepseek-ai/dsh-mcp-client|window-pilot-dsh)" -or $block -notmatch 'serverName: *window_pilot' -or $block -notmatch 'transport: *stdio') { throw 'Unexpected plugin type/namespace/transport; inspect manually' }
 $arguments = if ($Mode -eq 'Bridge') { @('-m','window_pilot','bridge','--service-file',$serviceFile) } else { @('-m','window_pilot','serve','--config',$config) }
 $changes = [ordered]@{ command=(ConvertTo-Json -Compress $Python); args=(ConvertTo-Json -Compress $arguments); cwd=(ConvertTo-Json -Compress $project); PYTHONPATH=(ConvertTo-Json -Compress (Join-Path $project 'src')) }
 $newBlock = $block

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Window Pilot",
+    "description": "指定窗口截图、后台点击和授权程序启动；通过本机 MCP 服务接入 DSH。"
+  }
+}

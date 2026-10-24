@@ -1,8 +1,34 @@
-# DSH 0.2.1-rc.2 接入
+# DSH 原生插件与 MCP 接入
+
+## 推荐：安装原生 Window Pilot 卡片
+
+项目提供 `dsh-plugin/` 原生包，包名 `window-pilot-dsh`，插件行 ID 仍为 `window-pilot-mcp`，MCP 命名空间仍为 `window_pilot`。在 DSH 的“插件 → 已安装插件”中，包通过 DSH 真实的 manifest/bundle 和导出 locale 元数据展示 **Window Pilot** 与中文简介，使用标准启用/禁用入口；不是给通用 MCP 改名，也没有单独重写 MCP 客户端。
+
+需要完整项目、可用 Python 与 DSH。包声明 DSH >=0.2.1-rc.2；本次本机实际版本为 **0.2.1-rc.3**，其他版本需自行核验。当前包未发布到 npm，采用当前源码子目录的本地链接。安装不依赖作者的用户名、盘符或固定 Python 路径：
+
+```powershell
+Set-Location C:\your-project\window-pilot
+# 默认只预览；Bridge 模式先要求已审查安装的管理员服务可连接。
+.\scripts\install-dsh-plugin.ps1 -Python 'C:\your-python\python.exe'
+# 实际安装：先校验服务和备份，再只迁移本插件并调用官方 DSH CLI 安装本地包。
+.\scripts\install-dsh-plugin.ps1 -Python 'C:\your-python\python.exe' -Apply
+```
+
+管理员服务首次配置见 [ADMIN_SERVICE](ADMIN_SERVICE.md)。暂时只使用普通窗口时，可以显式加 `-Mode Direct`（先准备 config.local.json），此时 launch_app 仍被拒绝，不自动申请 UAC。可以用 `-Dsh` 指定 DSH CLI 路径，`-Profile` 指定已有 `DSH_HOME/profiles/<name>`；默认采用当前用户 desktop profile。脚本只为该子进程设置对应 DSH_HOME。
+
+安装脚本备份 profile 的 package.json、cordis.patch.yml、现有锁文件和 workspace 设置到项目 `.local/backups/native-plugin-*/`，随后把本项目旧的独立 `insert` 迁成覆盖项，由原生 bundle 唯一提供插入行。调用官方 `dsh plugin --profile <name> add --save-prod --ignore-scripts --prefer-offline link:<当前项目>/dsh-plugin`，由 DSH 记录依赖并选中 bundle；优先缓存，既有依赖缺少解析元数据时允许包管理器获取元数据。已有其他依赖声明及已安装直接依赖版本在安装后重核；其他插件、模型及登录项不迁移。遇到复杂或重复的 Window Pilot 配置会停止，不猜测重写。CLI安装失败时，只在本插件 patch 未被并发修改的情况下恢复这次 patch 写入，并保留备份；不自动重复安装或覆盖其他配置，需要检查实际残留状态再处理。
+
+脚本通过外部 CLI 安装后，先保存工作并退出、重新打开 DSH，再到“插件”页核验。本机 0.2.1-rc.3 实测仅重新进入页面或点击刷新没有加载新包，重开 DSH 后卡片及接入才出现。卡片来源为本地源码链接；名字来自 `locale/en.json`、`locale/zh.json` 的 meta.title，简介来自 meta.description。以后在原生管理器内操作开关时，按其实际应用或需要重启的提示处理。写入 package.json 不等同于运行时加载成功，须检查实际插件状态、9项工具及 health。
+
+卡片关闭会撤销此 MCP 接入的工具并断开对应连接，开启会建立新连接；旧 token/帧不恢复，也不重放未完成操作。关闭卡片不会停止/禁用/删除独立管理员服务或其任务，不关闭已启动的用户程序，不提升整个 DSH。服务生命周期仍由 [管理员服务脚本](ADMIN_SERVICE.md#停止禁用卸载和恢复) 的明确操作控制。
+
+插件包只复用 DSH 自带 `@deepseek-ai/dsh-mcp-client` 的 Config/inject/apply；没有新增工具、输入模式、前台操作或游戏业务。先确认只有一个 `window_pilot` 命名空间，再调用 health：管理员模式应报告实际 `executor.mode=administrator_service`、`is_administrator=true`。不要通过启动游戏来验收插件安装。
+
+## 原通用 MCP 配置（不提供独立原生卡片）
 
 配置格式以本机该版本安装包内 `@deepseek-ai/dsh-mcp-client` 的 README、lib/config schema，以及 `dsh-app-boot` 的补丁语义为依据，未套用其他客户端的 `mcpServers` JSON 格式。
 
-新插件必须用顶层 `insert`；单独 `- id:` 只会覆盖已有 ID，不能插入新项。
+以下是旧独立 MCP 接入方式。原生包已经负责 `insert`，安装原生包后不要再添加这份独立插入项。单独 `- id:` 只覆盖 bundle 已有 ID，因此原生卡片关闭时不会被 profile 覆盖项重新插入。
 
 ```yaml
 - insert:

@@ -1,0 +1,5 @@
+# Machine-specific transport settings belong to the profile override written by
+# scripts/install-dsh-plugin.ps1, not this redistributable package.
+- insert:
+    - id: window-pilot-mcp
+      name: window-pilot-dsh

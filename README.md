@@ -53,7 +53,7 @@ python -m pip install --target .local/wgc-deps --upgrade --only-binary :all: -r 
 .\scripts\run.ps1 -Python 'C:\path\to\python.exe'
 ```
 
-run.ps1 是 stdio MCP，应由客户端托管。接入 DSH 0.2.1-rc.2 的方式不变：`scripts/register-dsh.ps1 -Python <路径>`，详见 [DSH](docs/DSH.md)。旧配置中的游戏字段不再读取；本次交付未修改 config.local.json 或历史数据。管理员服务检测到源码变更会自行停止；需启动现有已授权任务，再重连插件加载新版。
+run.ps1 是 stdio MCP，应由客户端托管。DSH 推荐使用原生插件包，让“已安装插件”显示 **Window Pilot** 名称、中文简介和启用/禁用入口：先运行 `scripts/install-dsh-plugin.ps1 -Python <路径>` 预览，再显式加 `-Apply` 安装；完整说明及普通/管理员模式见 [DSH](docs/DSH.md)。旧 register-dsh.ps1 只提供通用 MCP 接入，没有独立卡片；不要与原生包重复插入。旧配置中的游戏字段不再读取。管理员服务检测到 Python 源码或服务清单变更会自行停止；需要时启动现有已授权任务，再重连插件加载新版。
 
 ## 边界
 
