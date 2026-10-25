@@ -1,6 +1,7 @@
 """A disposable native test window, covered by a separate opaque window.
 
 Both are shown without activation. Only this fixture accepts test-only messages.
+interactive=True omits the cover and lets a human activate the test target.
 """
 import ctypes as C
 from ctypes import wintypes as W
@@ -9,7 +10,7 @@ import time
 from .win32 import U, G, K, PTR, api, check
 
 
-def run():
+def run(interactive=False):
     PROC = C.WINFUNCTYPE(C.c_ssize_t, W.HWND, W.UINT, W.WPARAM, W.LPARAM)
 
     class WndClass(C.Structure):
@@ -79,7 +80,7 @@ def run():
                 U.SetWindowTextW(hwnd, f"Window Pilot Test | clicks={clicks}")
                 U.InvalidateRect(hwnd, None, True)
                 return 0
-            if msg == 0x0021:
+            if msg == 0x0021 and not interactive:
                 return 3  # MA_NOACTIVATE
             if msg == 0x8001 and not is_cover:
                 blank = bool(wp)
@@ -104,14 +105,15 @@ def run():
     for name in ("WindowPilotFixture", "WindowPilotCover"):
         cls = WndClass(0, procedure, 0, 0, instance, None, None, None, None, name)
         check(U.RegisterClassW(C.byref(cls)), "RegisterClass")
-    # WS_EX_NOACTIVATE; neither window can acquire focus by clicking its chrome.
-    target = check(U.CreateWindowExW(0x08000000, "WindowPilotFixture", "Window Pilot Test | clicks=0",
+    # Default stays WS_EX_NOACTIVATE. Interactive mode needs a HUMAN to activate it.
+    target = check(U.CreateWindowExW(0 if interactive else 0x08000000, "WindowPilotFixture", "Window Pilot Test | clicks=0",
                                     0x00cf0000, 100, 100, 520, 360, None, None, instance, None), "fixture")
     U.ShowWindow(target, 4)
-    # WS_EX_NOACTIVATE | WS_EX_TOPMOST; the target is completely occluded.
-    cover = check(U.CreateWindowExW(0x08000008, "WindowPilotCover", "Window Pilot Opaque Cover",
-                                   0x00cf0000, 100, 100, 540, 380, None, None, instance, None), "cover")
-    U.ShowWindow(cover, 4)
+    if not interactive:
+        # WS_EX_NOACTIVATE | WS_EX_TOPMOST; the target is completely occluded.
+        cover = check(U.CreateWindowExW(0x08000008, "WindowPilotCover", "Window Pilot Opaque Cover",
+                                       0x00cf0000, 100, 100, 540, 380, None, None, instance, None), "cover")
+        U.ShowWindow(cover, 4)
     U.SetTimer(target, 1, 1000, None)
     message = W.MSG()
     while U.GetMessageW(C.byref(message), None, 0, 0) > 0:

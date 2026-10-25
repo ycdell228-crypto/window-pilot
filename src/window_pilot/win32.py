@@ -255,12 +255,14 @@ def desktop_state():
 def click_desktop_diagnostic(before, after, target_hwnd):
     """Describe observed changes without attributing them to the posted click.
 
-    A user can move their mouse or switch foreground apps during a background
+    A user can move their mouse or switch foreground apps during a target-local
     operation. These snapshots cannot identify the cause of either change.
     """
     return {"before": before, "after": after, "changed": before != after,
             "cursor_changed": before["cursor"] != after["cursor"],
             "foreground_changed": before["foreground"] != after["foreground"],
+            "target_was_foreground": before["foreground"] == target_hwnd,
+            "target_is_foreground_after": after["foreground"] == target_hwnd,
             "target_became_foreground": before["foreground"] != target_hwnd and after["foreground"] == target_hwnd,
             "attribution": "unknown; desktop snapshots do not identify the cause of a change"}
 
@@ -506,15 +508,14 @@ def _click(target, size, x, y, evidence, before_dispatch):
     if type(x) is not int or type(y) is not int or not (0 <= x < size[0] and 0 <= y < size[1]):
         raise PilotError("INVALID_POINT: use unscaled client-image pixel coordinates")
     before = desktop_state()
-    if before["foreground"] == target.hwnd:
-        raise PilotError("TARGET_IS_FOREGROUND: background test requires another foreground window")
+    evidence["desktop_before"] = before
     hwnd, cx, cy = resolve_child(target, x, y, evidence)
     child_identity = identity(hwnd)
 
     def revalidate(stage):
         verify(target)
-        if geometry(target.hwnd) != tuple(size) or U.GetForegroundWindow() == target.hwnd:
-            raise PilotError("STALE_FRAME_OR_TARGET_FOREGROUND: " + stage)
+        if geometry(target.hwnd) != tuple(size):
+            raise PilotError("STALE_FRAME: resized; " + stage)
         current = {"route": []}
         resolve_child(target, x, y, current)
         for key in ("route", "receiver", "receiver_point", "policy", "process_chain", "integrity", "transparent_steps"):
@@ -548,9 +549,11 @@ def _click(target, size, x, y, evidence, before_dispatch):
     except Exception as exc:
         raise PilotError("POST_DISPATCH_ERROR: input_sent=true; down_posted=true; "
                          f"up_posted={str(release_posted).lower()}; effect=unverified; do not replay; {exc}") from exc
+    observation = click_desktop_diagnostic(before, after, target.hwnd)
+    evidence["desktop_observation"] = observation
     return {"dispatch": "posted", "input_sent": True, "effect": "unverified", "method": "PostMessageW",
             "click_evidence": evidence, "desktop": before,
-            "desktop_observation": click_desktop_diagnostic(before, after, target.hwnd)}
+            "desktop_observation": observation}
 
 
 def close_window(target):

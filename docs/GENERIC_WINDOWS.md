@@ -44,7 +44,7 @@ unbind_window({"target_id": "同一ID"})  # 完成本次窗口操作后撤销授
 - list_windows 列可访问、可见、非最小化、非 DWM cloaked 且客户区尺寸受支持的顶层应用窗口。排除桌面/Progman/WorkerW 表面。枚举成功只代表可绑定候选，**不证明截图或消息一定兼容**。
 - 通用默认后端为 WGC。可在 window_control.capture_backend 配置默认值；也可在 bind_window/observe 明确选 wgc 或 printwindow。observe 的参数只决定这一帧，不静默改绑定默认。**没有失败自动切后端、整屏或区域截取。** 原图哈希、有界预览和 image_to_client_scale 保留。
 - 普通模式保留原权限。用户另行安装管理员常驻执行端后，实际截图/点击在高完整性执行；高于执行端或权限不明的目标仍拒绝，不按调用请求 UAC、不提升 DSH、不改消息过滤。health.executor 报告实际执行端权限。连接和登录自启见 [ADMIN_SERVICE](ADMIN_SERVICE.md)。WGC 能截图仍不意味着消息输入已成功。
-- 目标在前台时拒绝后台点击；工具不移动真实鼠标、抢回焦点或向前台浏览器发全局输入。不同鼠标位置/非目标前台变化只记诊断，不因此锁定。第三方应用仍可能自行激活，发现时须如实报告。
+- 已显式授权的目标即使已经在前台，也继续同样的目标局部 PostMessage；前台状态不是输入门禁。工具不主动切换前台、不移动真实鼠标或向前台浏览器发全局输入。鼠标位置与前台变化只记诊断，不因此锁定；目标身份、路由、权限、新帧和几何检查保持。第三方应用仍可能自行激活，发现时须如实报告。
 - 一次点击使用30秒内同一目标的新帧，核对几何和边界。默认只解析该目标的同进程子窗口，跨进程仅接受下述严格限定的 WebView2 嵌入链。投递前消费帧；第一次消息失败与部分发送后的失败保留不同证据，**错误/超时不是未点击的证明，禁止自动重放**。下一次点击前须重新截图并评估效果。
 - capture/click 错误会封住该 token 后续输入；仍可只读观察供用户判断。不要自动 unbind/rebind 来清故障或重新发送。其他 token 不受该错误影响，旧历史文件不改写。
 - 锁屏、隐藏/最小化、受保护内容、不同桌面和所有软件兼容性均无保证；不代用户还原窗口，不新增键盘、剪贴板、UIA 或任意命令能力。
@@ -52,6 +52,14 @@ unbind_window({"target_id": "同一ID"})  # 完成本次窗口操作后撤销授
 ## 本次交付检查
 
 本次嵌入窗口修复仅做语法、导入与9项工具参数声明检查，不执行模拟大套测试；没有点击现有启动器、启动游戏、重启生产服务或执行日常。既有 Qt 点击成功不能证明 WebView2 接受合成消息，真实效果交给用户验收。
+
+### 已在前台的自有目标验收
+
+`python tests/manual_foreground.py` 只打开项目自有测试窗，等待用户手动把它切到前台并保持鼠标静止约5秒，然后执行一次真实 `list_windows → bind_window(observe_and_click) → observe → click → observe`。测试窗不自行激活；原有默认遮挡/禁止激活测试模式不变，只有此脚本显式使用 fixture 的 interactive 选项，方便用户主动选择它。
+
+结果写入私有 `.local/foreground-fixture-result.json`：应当计数恰增1、两帧图像不同、单帧已消费、鼠标坐标不变，且 target_was_foreground=true、target_is_foreground_after=true、target_became_foreground=false。前后相同的前台目标不被记成点击造成抢焦点；这些值只是采样，不对其他程序自行激活作因果保证。click 返回与 click_evidence 审计均保留 desktop_observation，发送前保留 desktop_before；不恢复 hover_click 或额外激活/焦点框架。
+
+测试仅清理自己启动的 fixture，既不操作游戏/助手，也不重启管理员服务或修改 DSH profile。源码更新会触发既有管理员服务摘要保护自停；由操作方协调启动现有服务并重连原生插件，旧 token/帧不恢复。
 
 ## 嵌入 WebView2 窗口
 
@@ -69,7 +77,7 @@ unbind_window({"target_id": "同一ID"})  # 完成本次窗口操作后撤销授
 
 进程 B 的实际映像必须为 msedgewebview2.exe；使用当前进程快照、创建时间与实际映像核验其存活父进程链能追溯到绑定进程 A，父进程创建时间不能晚于子进程。各进程必须与执行端同用户、同非零会话，完整性不得高于执行端；查询失败、父进程退出或身份不符均报错。窗口类或 exe 文件名本身不构成授权。
 
-消息始终使用最终接收窗口自己的客户区坐标。按下前、松开前和发送后重新解析并比较整条窗口链、进程链、几何、屏幕位置、局部坐标与权限；替换、脱离、移动或前台变为目标时停止。仍存在核验与 Win32 消息调用之间无法原子消除的竞态，部分发送后不追发或补点。没有 WM_ACTIVATE、WM_MOUSEMOVE、真实鼠标、前台切换、键盘/UIA或截图回退。
+消息始终使用最终接收窗口自己的客户区坐标。按下前、松开前和发送后重新解析并比较整条窗口链、进程链、几何、屏幕位置、局部坐标与权限；替换、脱离或移动时停止。前台变为目标或目标原本就在前台，本身不拒绝消息。仍存在核验与 Win32 消息调用之间无法原子消除的竞态，部分发送后不追发或补点。没有 WM_ACTIVATE、WM_MOUSEMOVE、真实鼠标、主动前台切换、键盘/UIA或截图回退。
 
 成功 click 返回 click_evidence；后续 observe 的 previous_click 也保留它。字段包括 bound_window、root_point、route、transparent_steps、receiver（HWND/类/PID/创建时间/实际 exe）、receiver_point、integrity、process_chain、down_posted/up_posted 和 effect。`.local/audit.jsonl` 在发送前写 click_dispatch_prepared，完成或错误时记录最终证据；预备记录不代表消息已发送，进程崩溃/回复丢失仍可能结果未知，禁止自动重试。解析失败时保留已收集的部分链。
 
