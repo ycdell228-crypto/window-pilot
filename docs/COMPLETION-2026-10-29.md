@@ -1,5 +1,7 @@
 # Window Pilot DSH + Codex 新版完成汇报
 
+> 历史核心功能验收报告，早于后续三项优化与源码发布。下文开发目录、分支和未部署/未发布声明是该轮快照；当前发布基准及后续报告见[统一入口](OPTIMIZATION-SUMMARY-2026-10-29.md)，当前开发流程见[AGENTS.md](../AGENTS.md)。历史验收不扩大为本机部署或全面兼容性证明。
+
 日期：2026-10-29（Asia/Shanghai）。开发目录：`D:\codex\000\window-pilot-next`，分支：`feat/dsh-codex`。
 
 ## 本轮结论

@@ -1,6 +1,17 @@
 # Window Pilot 三项优化汇总（三项均已逐项接受）
 
+## 当前发布与阅读入口（2026-10-29核对）
+
+- GitHub `ycdell228-crypto/window-pilot` 的 `v0.1.0` 源码基准固定为 [b60cfa55c17fd361330ce1d12df075f4cfcc2720](https://github.com/ycdell228-crypto/window-pilot/commit/b60cfa55c17fd361330ce1d12df075f4cfcc2720)，包含三项优化；[已发布 README](https://github.com/ycdell228-crypto/window-pilot/blob/v0.1.0/README.md)是该版本功能概览。[v0.1.0 预发布](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.1.0)及 WP-NEXT-017 保留发布范围。本次文档上传前重新核对 `main` 也为该提交，随后仅向 `main` 追加文档修订；最新文档提交以[main 历史](https://github.com/ycdell228-crypto/window-pilot/commits/main/)核对，不移动版本标签。
+- 当前开发规则见 [AGENTS.md](../AGENTS.md)，用户确认的决定沿 [决策记录](decisions-dsh-codex.md)查阅。下面的工作目录、分支、未推送/未发布及待办是当时验收快照，不代表任意检出的当前状态；旧代验收流程不替代本次用户确认，见 WP-NEXT-018。
+- 本次编辑开始时，隔离副本为本地 `1ff8604` / `feat/dsh-codex`，`origin` 指向本机开发仓库，并非 GitHub main。此定位只说明本轮起点，不是通用规则；后续本地文档存档用 git log 核对，不同步、切换或修改远端设置。
+- 源码发布与本机部署分别核对。本轮未部署、重连或核验运行端；下面的本机安装/连接观察仍是历史事实，不能当作实时状态。接入步骤见 [DSH](DSH.md)、[Codex](CODEX.md)与[管理员服务](ADMIN_SERVICE.md)。
+
+## 三项优化的开发与验收快照
+
 工作区：`D:\codex\000\window-pilot-opt-text`，分支feat/dsh-codex。日期：2026-10-29（Asia/Shanghai）。这是隔离开发结果，未部署到生产，未推送、发布或写项目/全局记忆。
+
+后续发布接续（2026-10-29）：上句及文末“未推送/发布、另行授权”保留为本地验收时快照。用户后续明确授权首个 Release，现已发布 [v0.1.0 预发布](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.1.0)，精确远端基准 b60cfa55c17fd361330ce1d12df075f4cfcc2720；详见决策 WP-NEXT-017。本次仅发布既有源码，不部署或重连本机服务，不扩大下列验证范围。
 
 三项均已由主对话逐项审查接受；第三项及本总结随WP-NEXT-016所在提交本地存档。精确提交号用本目录`git log -3 --oneline`及决策文件历史核对，不将本地存档解释为生产已更新。
 
