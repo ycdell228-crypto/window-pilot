@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 from . import win32 as w
+from .input_monitor import InputMonitor, MonitorError, exact_key
 
 class Mouse(C.Structure):
     _fields_ = [('dx',W.LONG),('dy',W.LONG),('mouseData',W.DWORD),('dwFlags',W.DWORD),('time',W.DWORD),('extra',C.c_size_t)]
@@ -29,7 +30,7 @@ w.api(w.U,'GetAsyncKeyState',C.c_short,C.c_int)
 w.api(w.U,'SetForegroundWindow',W.BOOL,W.HWND)
 w.api(w.U,'WindowFromPoint',W.HWND,W.POINT)
 w.api(w.U,'GetSystemMetrics',C.c_int,C.c_int)
-KEYS = {'CTRL':0x11,'SHIFT':0x10,'ALT':0x12,'ENTER':13,'TAB':9,'ESC':27,'BACKSPACE':8,'DELETE':46,
+KEYS = {'CTRL':0xa2,'SHIFT':0xa0,'ALT':0xa4,'ENTER':13,'TAB':9,'ESC':27,'BACKSPACE':8,'DELETE':46,
         'LEFT':37,'UP':38,'RIGHT':39,'DOWN':40,'HOME':36,'END':35,'PAGEUP':33,'PAGEDOWN':34,'SPACE':32}
 KEYS.update({chr(i):i for i in range(65,91)})
 KEYS.update({str(i):48+i for i in range(10)})
@@ -63,14 +64,18 @@ def validate(args, size):
 def physical_clear(owned=()):
     owned=set(owned)
     for generic, sides in ((17,(162,163)),(16,(160,161)),(18,(164,165))):
-        if generic in owned: owned.update(sides)
+        if owned.intersection(sides): owned.add(generic)  # ignore aggregate, still check the opposite side
     if any(w.U.GetAsyncKeyState(vk)&0x8000 for vk in range(1,255) if vk not in owned):
         raise w.PilotError('FOREGROUND_PHYSICAL_INPUT_HELD')
 
 def native_focus(target,size, expected=None):
     w.bindable(target); w.verify(target)
-    if w.geometry(target.hwnd)!=tuple(size) or w.U.GetForegroundWindow()!=target.hwnd:
-        raise w.PilotError('FOREGROUND_TARGET_OR_GEOMETRY_CHANGED')
+    matching={'client_size_matches':w.geometry(target.hwnd)==tuple(size),
+              'foreground_matches':w.U.GetForegroundWindow()==target.hwnd}
+    if not all(matching.values()):
+        exc=w.PilotError('FOREGROUND_TARGET_OR_GEOMETRY_CHANGED')
+        exc.native_focus_diagnostic=matching
+        raise exc
     if w.input_access(target)['blocked_by_integrity'] or w.process_scope(os.getpid())!=w.process_scope(target.pid):
         raise w.PilotError('FOREGROUND_SCOPE_DENIED')
     info=ThreadInfo(); info.size=C.sizeof(info)
@@ -90,8 +95,9 @@ class FocusProbeError(w.PilotError):
     pass
 
 class FocusProbe:
-    def __init__(self,target,deadline):
+    def __init__(self,target,deadline,monitor=None):
         self.deadline=deadline
+        self.monitor=monitor
         self.target=target; self.lines=queue.Queue()
         self.diagnostic={'stage':'startup','source':'transport','apartment':'unknown'}
         self.worker_stage=dict(self.diagnostic)
@@ -113,12 +119,22 @@ class FocusProbe:
         if point: request.update(x=point.x,y=point.y)
         phase='request_write'
         try:
+            if self.monitor is not None: self.monitor.check()
             self.process.stdin.write((json.dumps(request)+'\n').encode('ascii')); self.process.stdin.flush()
             remaining=min(6,self.deadline-time.monotonic())
             if remaining<=0:
                 phase='deadline'; raise ValueError()
             phase='response_wait'
-            line=self.lines.get(timeout=remaining)
+            until=time.monotonic()+remaining
+            while True:
+                if self.monitor is not None: self.monitor.check()
+                remaining=until-time.monotonic()
+                if remaining<=0: raise queue.Empty()
+                try:
+                    line=self.lines.get(timeout=min(0.02,remaining))
+                    break
+                except queue.Empty:
+                    continue
             phase='response_eof' if not line else 'response_json'
             value=json.loads(line)
             if (value.get('stage') not in PROBE_STAGES or value.get('apartment') not in ('MTA','STA')):
@@ -127,6 +143,8 @@ class FocusProbe:
             phase='worker_rejected'
             if value.get('ok') is not True or value['apartment']!='MTA' or not isinstance(value.get('fingerprint'),str): raise ValueError()
             return value['fingerprint']
+        except MonitorError:
+            raise
         except Exception:
             if phase!='worker_rejected': self.diagnostic=dict(self.worker_stage)
             stage=self.diagnostic['stage']
@@ -136,7 +154,8 @@ class FocusProbe:
         self.process.stdin.close(); self.process.stdout.close(); self.process.stderr.close()
 
 def keyboard(vk=0,scan=0,flags=0):
-    event=Input(); event.type=1; event.ki=Keyboard(vk,scan,flags | (1 if vk in (33,34,35,36,37,38,39,40,45,46) else 0),0,0); return event
+    vk=exact_key(vk,scan,bool(flags & 1))
+    event=Input(); event.type=1; event.ki=Keyboard(vk,scan,flags | (1 if vk in (33,34,35,36,37,38,39,40,45,46,163,165) else 0),0,0); return event
 
 def mouse(flags,point=None):
     event=Input(); event.type=0
@@ -166,11 +185,31 @@ def act(target,size,args,before_input):
             raise w.PilotError('FOREGROUND_POINT_OCCLUDED')
         return value
     deadline=time.monotonic()+ACTION_BUDGET_SECONDS
-    activation=None
-    probe=None; held={}; cursor_expected=None; started=False; sent=0; release_failed=False; error=None
+    activation=None; native_diagnostic=None
+    probe=None; monitor=None; held={}; cursor_expected=None; started=False; attempted=False; sent=0; release_failed=False; cleanup_failed=False; deferred=0; error=None
+    def emit(event,down=None,up=None):
+        nonlocal attempted
+        monitor.check()
+        monitor.tag(event)
+        if down is not None: held[down]=up
+        attempted=True
+        inject(event)
+    def release_owned(key,event):
+        nonlocal deferred
+        if not monitor.may_release(key):
+            deferred+=1  # external same-key down owns this state now; never release it
+            return False
+        monitor.tag(event)
+        inject(event)
+        return True
     try:
+        monitor=InputMonitor()
+        physical_clear()  # close held-input gap while the pass-through hooks were installing
+        monitor.check()
         if args['action']=='activate':
+            monitor.check()
             before_input(); started=True
+            monitor.check(); attempted=True
             accepted=bool(w.U.SetForegroundWindow(target.hwnd))
             time.sleep(0.05)
             activation={'set_foreground_returned':accepted,
@@ -184,9 +223,10 @@ def act(target,size,args,before_input):
         elif args['action']=='click':
             # Explicit real click may activate the observed target naturally. No keyboard
             # is injected until later calls have verified actual target-owned focus.
-            probe=FocusProbe(target,deadline)
+            probe=FocusProbe(target,deadline,monitor)
             destination=point(args['x'],args['y'])
             def pointer_check():
+                monitor.check()
                 if time.monotonic()>deadline: raise w.PilotError('FOREGROUND_ACTION_DEADLINE')
                 w.bindable(target); w.verify(target)
                 if w.input_access(target)['blocked_by_integrity'] or w.process_scope(os.getpid())!=w.process_scope(target.pid):
@@ -197,21 +237,22 @@ def act(target,size,args,before_input):
                 point(args['x'],args['y']); physical_clear(held)
             pointer_check(); probe.read(destination); pointer_check()
             before_input(); started=True
-            inject(mouse(1,destination)); sent+=1; time.sleep(0.02)
+            emit(mouse(1,destination)); sent+=1; time.sleep(0.02)
             pointer_check(); probe.read(destination); pointer_check()
             cursor=W.POINT(); w.check(w.U.GetCursorPos(C.byref(cursor)),'foreground_cursor')
             if abs(cursor.x-destination.x)>1 or abs(cursor.y-destination.y)>1:
                 raise w.PilotError('FOREGROUND_CURSOR_CHANGED')
-            held[1]=mouse(4); inject(mouse(2)); sent+=1
+            emit(mouse(2),1,mouse(4)); sent+=1
             time.sleep(0.02)
             native_focus(target,size); probe.read()
-            inject(mouse(4)); sent+=1; held.pop(1,None)
+            sent+=int(release_owned(1,mouse(4))); held.pop(1,None)
             native_focus(target,size); probe.read()
         else:
             focus=native_focus(target,size)
-            probe=FocusProbe(target,deadline)
+            probe=FocusProbe(target,deadline,monitor)
             fingerprint=probe.read()
             def check():
+                monitor.check()
                 if time.monotonic()>deadline: raise w.PilotError('FOREGROUND_ACTION_DEADLINE')
                 current=W.POINT(); w.check(w.U.ClientToScreen(target.hwnd,C.byref(current)),'foreground_origin')
                 if (current.x,current.y)!=(origin.x,origin.y): raise w.PilotError('FOREGROUND_GEOMETRY_CHANGED')
@@ -234,8 +275,7 @@ def act(target,size,args,before_input):
                 if down == 1:
                     probe.read(cursor_expected)
                     check()
-                if down is not None: held[down]=up
-                inject(event); sent+=1
+                emit(event,down,up); sent+=1
                 if down is None and up is not None: held.pop(up,None)
             action=args['action']
             if action=='text':
@@ -244,12 +284,12 @@ def act(target,size,args,before_input):
                     scan=int.from_bytes(units[offset:offset+2],'little')
                     # Virtual-key 0 is only an internal owned Unicode marker.
                     send(keyboard(scan=scan,flags=4),0,keyboard(scan=scan,flags=6))
-                    inject(keyboard(scan=scan,flags=6)); sent+=1; held.pop(0,None)
+                    sent+=int(release_owned(0,keyboard(scan=scan,flags=6))); held.pop(0,None)
             elif action=='keys':
                 for name in args['keys']:
                     vk=KEYS[name]; send(keyboard(vk),vk,keyboard(vk,flags=2))
                 for name in reversed(args['keys']):
-                    vk=KEYS[name]; inject(keyboard(vk,flags=2)); sent+=1; held.pop(vk,None)
+                    vk=KEYS[name]; sent+=int(release_owned(vk,keyboard(vk,flags=2))); held.pop(vk,None)
             else:
                 start=point(args['x'],args['y'])
                 send(mouse(1,start))
@@ -265,24 +305,46 @@ def act(target,size,args,before_input):
                         y=round(args['y']+(args['end_y']-args['y'])*index/args['steps'])
                         destination=point(x,y)
                         send(mouse(1,destination)); cursor_expected=destination; time.sleep(0.02)
-                inject(mouse(4)); sent+=1; held.pop(1,None)
+                sent+=int(release_owned(1,mouse(4))); held.pop(1,None)
                 focus=native_focus(target,size); fingerprint=probe.read()
             check()
     except Exception as exc:
+        native_diagnostic=getattr(exc,'native_focus_diagnostic',None)
         allowed={'FOREGROUND_PHYSICAL_INPUT_HELD','FOREGROUND_TARGET_OR_GEOMETRY_CHANGED','FOREGROUND_FOCUS_OUTSIDE_TARGET','FOREGROUND_FOCUS_CHANGED','FOREGROUND_PROTECTED_OR_UNVERIFIED_FOCUS','FOREGROUND_POINT_OCCLUDED','FOREGROUND_INJECTION_PARTIAL_OR_DENIED','FOREGROUND_ACTION_DEADLINE','FOREGROUND_GEOMETRY_CHANGED','FOREGROUND_CURSOR_CHANGED','FOREGROUND_ACTIVATION_NOT_GRANTED'}
-        error=str(exc) if isinstance(exc,FocusProbeError) or (isinstance(exc,w.PilotError) and str(exc) in allowed) else ('FOREGROUND_INPUT_INTERRUPTED' if started else 'FOREGROUND_SAFETY_CHECK_REJECTED')
+        error=str(exc) if isinstance(exc,(FocusProbeError,MonitorError)) or (isinstance(exc,w.PilotError) and str(exc) in allowed) else ('FOREGROUND_INPUT_INTERRUPTED' if started else 'FOREGROUND_SAFETY_CHECK_REJECTED')
     finally:
-        for release in reversed(list(held.values())):
-            try: inject(release)
+        for key,release in reversed(list(held.items())):
+            try:
+                if attempted: release_owned(key,release)
             except Exception: release_failed=True
         if probe is not None:
             try: probe.close()
-            except Exception: release_failed=True
+            except Exception:
+                cleanup_failed=True
+                error=error or 'FOREGROUND_PROBE_CLEANUP_FAILED'
+        if monitor is not None:
+            try: monitor.close()
+            except MonitorError as exc:
+                cleanup_failed=True
+                error=error or str(exc)
+            if monitor.failed: error=error or 'FOREGROUND_INPUT_MONITOR_UNAVAILABLE'
     if not started:
-        raise w.PilotError(error or 'FOREGROUND_SAFETY_CHECK_REJECTED')
-    return {'status':'unknown' if error or release_failed else 'injected',
-            'input_sent':bool(sent) or args['action']=='activate','event_count':sent,
-            'effect':'unverified','error':error,'owned_input_release_failed':release_failed,
+        exc=w.PilotError(error or 'FOREGROUND_SAFETY_CHECK_REJECTED')
+        if monitor is not None:
+            exc.input_monitor_counts=dict(monitor.counts)
+            exc.external_input_detected=any(value for key,value in monitor.counts.items() if key.startswith('external_'))
+        exc.native_focus_diagnostic=native_diagnostic
+        raise exc
+    return {'status':('unknown' if error or release_failed or cleanup_failed or deferred else 'injected') if attempted else 'not_sent',
+            'input_sent':bool(sent) or (attempted and args['action']=='activate'),
+            'delivery':'not_sent' if not attempted else 'sent_effect_unverified' if sent or args['action']=='activate' else 'attempted_outcome_unknown',
+            'input_attempted':attempted,'event_count':sent,
+            'effect':'unverified' if attempted else 'not_sent','error':error,'owned_input_release_failed':release_failed,
+            'input_cleanup_failed':cleanup_failed,'input_monitor_failed':monitor.failed if monitor is not None else False,
             'activation_diagnostic':activation,
+            'native_focus_diagnostic':native_diagnostic,
+            'external_input_detected':any(value for key,value in monitor.counts.items() if key.startswith('external_')) if monitor is not None else False,
+            'input_monitor_counts':dict(monitor.counts) if monitor is not None else None,
+            'release_deferred_count':deferred,
             'focus_diagnostic':dict(probe.diagnostic) if probe is not None else None,
             'next':'observe actual effect; unknown results require explicit review, never replay'}

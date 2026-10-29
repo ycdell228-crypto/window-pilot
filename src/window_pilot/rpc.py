@@ -57,6 +57,9 @@ class Dispatcher:
                     result = {"content": content, "isError": False}
                 except Exception as exc:
                     result = {"content": [{"type": "text", "text": str(exc)}], "isError": True}
+                    if hasattr(exc, "recovery_diagnostic"):
+                        result["content"].append({"type": "text", "text": json.dumps(
+                            {"recovery_diagnostic": exc.recovery_diagnostic}, ensure_ascii=False)})
             return {"jsonrpc": "2.0", "id": request_id, "result": result}
         except Exception as exc:
             return error(request_id, -32602, str(exc))

@@ -39,6 +39,7 @@ class WindowState:
     disconnect_pending: bool = False
     fault: str | None = None
     unobserved_input: bool = False
+    input_state: str = "no_input_recorded"
 
 
 @dataclass
@@ -131,7 +132,8 @@ class Coordinator:
                 "owner_is_this_connection": state.owner == connection, "in_flight": state.active is not None,
                 "lease_remaining_seconds": max(0, state.deadline - self.clock()) if state.deadline is not None else None,
                 "faulted": state.fault is not None, "fault": state.fault,
-                "unobserved_input": state.unobserved_input, "shared_executor": self.shared}
+                "unobserved_input": state.unobserved_input, "input_state": state.input_state,
+                "shared_executor": self.shared}
 
     def status(self, connection, identity):
         with self._lock:
@@ -159,6 +161,8 @@ class Coordinator:
         with self._lock:
             state = self.validate_stamp(identity, stamp)
             if state.owner == connection and state.fault is None:
+                if state.unobserved_input:
+                    state.input_state = "observation_available"
                 state.unobserved_input = False
 
     def recover(self, connection, identity, stamp):
@@ -169,6 +173,7 @@ class Coordinator:
                 raise CoordinationError("WINDOW_ACTION_IN_FLIGHT")
             state.fault = None
             state.unobserved_input = False
+            state.input_state = "reviewed_no_replay"
             state.epoch += 1  # even the reviewed observation is not reusable for input
             return self._status(state, connection)
 
@@ -217,8 +222,10 @@ class Coordinator:
                         state.fault = "input_outcome_unknown"
                         state.epoch += 1
                         state.unobserved_input = True
+                        state.input_state = "partial_or_unknown"
                     else:
                         state.unobserved_input = ticket.sent
+                        state.input_state = "sent_unreviewed" if ticket.sent else "not_sent"
                 state.active = None
                 if foreground:
                     self._foreground = False

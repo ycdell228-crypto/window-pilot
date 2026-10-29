@@ -108,13 +108,13 @@ class ClickFailureTests(unittest.TestCase):
             self.call()
         self.assertEqual(self.post.call_count, 0)
         self.assertEqual(self.barrier.call_count, 0)
-        self.assertTrue(self.service.faulted)
+        self.assertFalse(self.service.faulted)  # a proven pre-send refusal needs no recovery
 
-    def assert_failed_after_dispatch(self, pattern, calls=2):
+    def assert_failed_after_dispatch(self, pattern, calls=2, recovery_required=True):
         with self.assertRaisesRegex(w.PilotError, pattern):
             self.call()
         self.assertEqual(self.post.call_count, calls)
-        self.assertTrue(self.service.faulted)
+        self.assertEqual(self.service.faulted, recovery_required)
         self.assertNotIn("frame", self.service.frames)
         # A second request cannot replay this input or reuse its old frame.
         with self.assertRaisesRegex(w.PilotError, "STALE_FRAME|WINDOW_INPUT_FAULTED"):
@@ -131,6 +131,32 @@ class ClickFailureTests(unittest.TestCase):
                          [(self.child.hwnd, 0x0201, 1), (self.child.hwnd, 0x0202, 0)])
         self.assertEqual(self.barrier.call_count, 1)
         self.assertNotIn("frame", self.service.frames)
+
+    def test_zero_accepted_events_with_unknown_foreground_reply_still_faults_shared_input(self):
+        from window_pilot import foreground
+        from window_pilot.coordination import Coordinator
+        from window_pilot.rpc import Dispatcher
+        self.service.coordinator = Coordinator(shared=True)
+        self.service.coordinator.acquire(self.service.connection_id, self.target)
+        self.service.bindings["target"]["access"] = "observe_and_foreground"
+        self.service.frames["frame"]["coordination"] = self.service.coordinator.observe_begin(self.target)
+        # Controlled native-result boundary, not a claim of real desktop input.
+        # Service, Dispatcher, input ticket and shared fault latch remain real.
+        def uncertain(target, size, arguments, begin):
+            begin()
+            return {"status":"unknown", "input_sent":False, "input_attempted":True,
+                    "event_count":0, "delivery":"attempted_outcome_unknown", "effect":"unverified"}
+        arguments = {"target_id":"target", "frame_id":"frame", "action":"keys", "keys":["CTRL","A"]}
+        with patch.object(foreground, "act", side_effect=uncertain):
+            result = Dispatcher(self.service).handle({"jsonrpc":"2.0", "id":1, "method":"tools/call",
+                "params":{"name":"foreground_action", "arguments":arguments}})["result"]
+        data = json.loads(result["content"][0]["text"])
+        self.assertIs(type(data["input_sent"]), bool)
+        self.assertFalse(data["input_sent"])
+        self.assertEqual(data["status"], "unknown")
+        self.assertTrue(self.service.coordinator.status(self.service.connection_id,self.target)["faulted"])
+        with self.assertRaisesRegex(w.PilotError,"WINDOW_INPUT_FAULTED"):
+            self.service.call("foreground_action", arguments)
 
     def test_expired_frame_is_rejected(self):
         self.service.frames["frame"]["time"] -= 31
@@ -169,7 +195,7 @@ class ClickFailureTests(unittest.TestCase):
 
     def test_uipi_down_failure_has_no_accepted_input(self):
         self.post.return_value = 0
-        self.assert_failed_after_dispatch("DISPATCH_FAILED: input_sent=false.*Win32 error 5", calls=1)
+        self.assert_failed_after_dispatch("DISPATCH_FAILED: input_sent=false.*Win32 error 5", calls=1, recovery_required=False)
         self.assertEqual(self.post.call_args.args[1], 0x0201)
         self.assertEqual(self.barrier.call_count, 0)
 
