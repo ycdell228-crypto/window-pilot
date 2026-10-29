@@ -15,6 +15,13 @@ from . import win32 as w
 from . import local_pipe
 from .rpc import Dispatcher, METHODS, error, stdio_loop
 from .service import Service
+from .coordination import Coordinator
+
+
+def create_connection_service(config_path, lock_path, connection_id, coordinator):
+    """Production connection factory, also usable without installing an executor."""
+    return Service(config_path, lock_path=lock_path, allow_app_launch=True,
+                   coordinator=coordinator, connection_id=connection_id)
 
 
 def atomic(path, value):
@@ -32,7 +39,7 @@ def identity():
 
 def source_digest(service_file):
     root = Path(__file__).resolve().parents[2]
-    paths = sorted(Path(__file__).parent.glob("*.py")) + [root / "scripts/runtime_entry.py", Path(service_file)]
+    paths = sorted(Path(__file__).parent.glob("*.py")) + [root / "scripts/runtime_entry.py", Path(service_file)] + sorted((root / "scripts").glob("uia-*.ps1"))
     value = hashlib.sha256()
     for path in paths:
         value.update(str(path).encode("utf8"))
@@ -128,7 +135,8 @@ def run(service_file):
     except OSError as exc:
         lock.close()
         raise w.PilotError("ADMIN_EXECUTOR_ALREADY_RUNNING") from exc
-    stopped, operations, state_lock = threading.Event(), threading.Lock(), threading.Lock()
+    stopped, state_lock = threading.Event(), threading.Lock()
+    coordinator = Coordinator(shared=True)
     digest = source_digest(service_file)
     stop_reason = {"value": "operator_stop_or_connection_shutdown"}
     instance = secrets.token_hex(12)
@@ -154,10 +162,11 @@ def run(service_file):
 
     def client(connection):
         service = None
+        connection_calls = threading.Lock()
         try:
             other = peer(connection, own, True, config["python"])
             session_id = secrets.token_hex(12)
-            service = Service(config["config"], lock_path=sessions / (session_id + ".lock"), allow_app_launch=True)
+            service = create_connection_service(config["config"], sessions / (session_id + ".lock"), session_id, coordinator)
             executor = {**own, "mode": "administrator_service", "instance_id": instance, "connection_id": session_id,
                         "code_sha256": digest,
                         "client_pid": other["pid"], "client_integrity_rid": other["integrity_rid"],
@@ -169,7 +178,7 @@ def run(service_file):
                     connection.send({"stopped": True, "bound_user_windows_untouched": True, "automatic_restart": False})
                     stopped.set()
                     return
-                with operations:  # no concurrent native actions across MCP clients
+                with connection_calls:  # per-connection order; coordinator guards each exact window across clients
                     if stopped.is_set():
                         return
                     if source_digest(service_file) != digest:

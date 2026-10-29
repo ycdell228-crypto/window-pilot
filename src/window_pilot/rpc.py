@@ -1,4 +1,4 @@
-"""Shared eight-tool MCP dispatcher: direct stdio and administrator executor."""
+"""Shared MCP dispatcher for calling hosts: direct stdio and administrator executor."""
 from __future__ import annotations
 
 import json

@@ -1,5 +1,7 @@
 # DSH 原生插件与 MCP 接入
 
+DSH 原生插件继续使用本目录的共用 MCP 核心；Codex 直接使用标准 stdio，见 [CODEX](CODEX.md)。新版隔离开发期间不要运行本页的 `-Apply` 命令迁移原版生产插件，也不要把新版接到原版管理员服务。核心的文本/图片和调用规则适用于所有调用宿主。
+
 ## 推荐：安装原生 Window Pilot 卡片
 
 项目提供 `dsh-plugin/` 原生包，包名 `window-pilot-dsh`，插件行 ID 仍为 `window-pilot-mcp`，MCP 命名空间仍为 `window_pilot`。在 DSH 的“插件 → 已安装插件”中，包通过 DSH 真实的 manifest/bundle 和导出 locale 元数据展示 **Window Pilot** 与中文简介，使用标准启用/禁用入口；不是给通用 MCP 改名，也没有单独重写 MCP 客户端。
@@ -18,7 +20,7 @@ Set-Location C:\your-project\window-pilot
 
 安装脚本备份 profile 的 package.json、cordis.patch.yml、现有锁文件和 workspace 设置到项目 `.local/backups/native-plugin-*/`，随后把本项目旧的独立 `insert` 迁成覆盖项，由原生 bundle 唯一提供插入行。调用官方 `dsh plugin --profile <name> add --save-prod --ignore-scripts --prefer-offline link:<当前项目>/dsh-plugin`，由 DSH 记录依赖并选中 bundle；优先缓存，既有依赖缺少解析元数据时允许包管理器获取元数据。已有其他依赖声明及已安装直接依赖版本在安装后重核；其他插件、模型及登录项不迁移。遇到复杂或重复的 Window Pilot 配置会停止，不猜测重写。CLI安装失败时，只在本插件 patch 未被并发修改的情况下恢复这次 patch 写入，并保留备份；不自动重复安装或覆盖其他配置，需要检查实际残留状态再处理。
 
-脚本通过外部 CLI 安装后，先保存工作并退出、重新打开 DSH，再到“插件”页核验。本机 0.2.1-rc.3 实测仅重新进入页面或点击刷新没有加载新包，重开 DSH 后卡片及接入才出现。卡片来源为本地源码链接；名字来自 `locale/en.json`、`locale/zh.json` 的 meta.title，简介来自 meta.description。以后在原生管理器内操作开关时，按其实际应用或需要重启的提示处理。写入 package.json 不等同于运行时加载成功，须检查实际插件状态、9项工具及 health。
+脚本通过外部 CLI 安装后，先保存工作并退出、重新打开 DSH，再到“插件”页核验。本机 0.2.1-rc.3 实测仅重新进入页面或点击刷新没有加载新包，重开 DSH 后卡片及接入才出现。卡片来源为本地源码链接；名字来自 `locale/en.json`、`locale/zh.json` 的 meta.title，简介来自 meta.description。以后在原生管理器内操作开关时，按其实际应用或需要重启的提示处理。写入 package.json 不等同于运行时加载成功，须检查实际插件状态、13项工具及 health。
 
 卡片关闭会撤销此 MCP 接入的工具并断开对应连接，开启会建立新连接；旧 token/帧不恢复，也不重放未完成操作。关闭卡片不会停止/禁用/删除独立管理员服务或其任务，不关闭已启动的用户程序，不提升整个 DSH。服务生命周期仍由 [管理员服务脚本](ADMIN_SERVICE.md#停止禁用卸载和恢复) 的明确操作控制。
 
@@ -48,7 +50,7 @@ Set-Location C:\your-project\window-pilot
         failOnStartupError: false
 ```
 
-DSH 先进行 stdio 协议探测，再启动真实服务；initialize 返回 instructions 和工具能力，tools/list 当前共9项。支持本机 0.2.1-rc.2 客户端的 2026-07-28 及列明的旧版协议。普通直连服务使用项目锁；管理员执行端的每条连接独立持有 token/帧状态。
+DSH 先进行 stdio 协议探测，再启动真实服务；initialize 返回 instructions 和工具能力，tools/list 当前共13项。支持本机 0.2.1-rc.2 客户端的 2026-07-28 及列明的旧版协议。普通直连服务使用项目锁；管理员执行端的每条连接独立持有 token/帧状态。
 
 普通软件使用：`list_windows → bind_window(hwnd, access="observe_and_click", purpose="用户任务", capture_backend="wgc") → observe → click → observe`。绑定默认只读，明确允许点击后只覆盖该窗口/该服务会话，不需终端逐次确认。实际参数和边界见 [GENERIC_WINDOWS](GENERIC_WINDOWS.md)。DSH/宿主负责决策和调度；需要启动程序时使用通用 launch_app。插件没有游戏流程、日志任务监测或调度能力。管理员常驻模式通过普通stdio桥接入，见 [ADMIN_SERVICE](ADMIN_SERVICE.md)，不是提升整个DSH。
 
@@ -78,7 +80,7 @@ exe 必须是存在的本地绝对 .exe 路径；拒绝 UNC、网络盘、快捷
 
 ## 更新后重连
 
-管理员执行端检测到源码或服务清单改变会自停，不热更新或自动重启。本次交付未代执行生产重启。已安装并启用管理员任务时，由操作方运行 `scripts/admin-service.ps1 -Action Start -Apply`，再让 DSH 只重连 window-pilot-mcp；无需重新安装任务或修改 DSH 配置。检查 tools/list 为9项，以及 health 的 executor.mode=administrator_service、executor.is_administrator=true、app_launch.enabled=true。普通直连模式则由客户端重启其 stdio 服务，但 launch_app 保持禁用。
+管理员执行端检测到源码或服务清单改变会自停，不热更新或自动重启。本次交付未代执行生产重启。已安装并启用管理员任务时，由操作方运行 `scripts/admin-service.ps1 -Action Start -Apply`，再让 DSH 只重连 window-pilot-mcp；无需重新安装任务或修改 DSH 配置。检查 tools/list 为13项，以及 health 的 executor.mode=administrator_service、executor.is_administrator=true、app_launch.enabled=true。普通直连模式则由客户端重启其 stdio 服务，但 launch_app 保持禁用。
 
 更新/重连后旧 token 和帧失效，重新枚举并绑定；不重放旧操作，也不创建或恢复任何旧日常计划。移除接入时，备份后仅删除 window-pilot-mcp 插入项，不改其他插件。
 

@@ -190,7 +190,12 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr.decode())
             rows = [json.loads(line) for line in result.stdout.splitlines()]
             self.assertEqual(len(rows), 6)
-            self.assertEqual(len(rows[1]["result"]["tools"]), 8)
+            self.assertEqual(rows[0]["result"]["protocolVersion"], "2025-03-26")
+            self.assertEqual(rows[0]["result"]["serverInfo"]["name"], "window-pilot")
+            self.assertNotIn("DSH", rows[0]["result"]["instructions"])
+            self.assertEqual({tool["name"] for tool in rows[1]["result"]["tools"]},
+                             {"health", "window_control", "list_windows", "bind_window", "unbind_window", "observe", "observe_controls", "control_action",
+                              "click", "foreground_action", "launch_app", "launch_test", "close_test"})
             for row in rows[2:]:
                 self.assertTrue(row["result"]["isError"])
             self.assertIn("UNKNOWN_TOOL", rows[2]["result"]["content"][0]["text"])

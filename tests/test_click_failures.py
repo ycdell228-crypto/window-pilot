@@ -27,8 +27,11 @@ class ClickFailureTests(unittest.TestCase):
         self.before_dispatch = self.after_down = self.after_barrier = None
         self.service.targets["target"] = self.target
         self.service.bindings["target"] = {"access": "observe_and_click", "purpose": "fixture", "capture_backend": "printwindow", "input_faulted": False, "awaiting_observation": False, "last_click": None}
+        self.service.control_observations = {}
         self.args = {"target_id": "target", "frame_id": "frame", "x": 10, "y": 20}
-        self.service.frames["frame"] = {"target_id": "target", "size": (200, 100), "time": time.monotonic()}
+        self.service.coordinator.acquire(self.service.connection_id, self.target, seconds=None)
+        self.service.frames["frame"] = {"target_id": "target", "size": (200, 100), "time": time.monotonic(),
+                                        "coordination": self.service.coordinator.observe_begin(self.target)}
         self.stack = ExitStack()
         # A valid bound root and its own child; no fake HWND is queried on the desktop.
         self.stack.enter_context(patch.object(w, "identity", side_effect=self.identity))
@@ -114,7 +117,7 @@ class ClickFailureTests(unittest.TestCase):
         self.assertTrue(self.service.faulted)
         self.assertNotIn("frame", self.service.frames)
         # A second request cannot replay this input or reuse its old frame.
-        with self.assertRaisesRegex(w.PilotError, "STALE_FRAME"):
+        with self.assertRaisesRegex(w.PilotError, "STALE_FRAME|WINDOW_INPUT_FAULTED"):
             self.call()
         self.assertEqual(self.post.call_count, calls)
 
@@ -174,6 +177,13 @@ class ClickFailureTests(unittest.TestCase):
         self.post.side_effect = [1, 0]
         self.assert_failed_after_dispatch("POST_DISPATCH_ERROR: input_sent=true.*up_posted=false.*do not replay")
         self.assertEqual(self.barrier.call_count, 0)
+
+    def test_unexpected_post_failure_keeps_unknown_admission(self):
+        self.post.side_effect = RuntimeError("controlled unknown API outcome")
+        self.assert_failed_after_dispatch("POST_DISPATCH_ERROR: input_sent=unknown.*do not replay", calls=1)
+        entries = [json.loads(line) for line in (self.service.local / "audit.jsonl").read_text(encoding="utf8").splitlines()]
+        failure = next(row for row in entries if row["event"] == "click" and row["success"] is False)
+        self.assertEqual(failure["click_evidence"]["messages"][0]["state"], "attempted")
 
     def test_barrier_failure_preserves_dispatch_status(self):
         self.barrier.return_value = 0

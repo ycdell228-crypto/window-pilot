@@ -5,7 +5,7 @@
   → 普通权限 stdio bridge（现有 @deepseek-ai/dsh-mcp-client）
   → 本机命名管道（Windows ACL + 实际 peer PID/SID/session 检查）
   → 当前用户、交互会话中的管理员 pythonw.exe 执行端
-  → 9项接口：原8项窗口/自有测试工具 + launch_app
+  → 当前13项接口（含UIA观察/动作和window_control协调）
 ```
 
 桥接端不执行截图/点击/程序启动，也不代签 UAC。管理员服务实际持有绑定、消费帧、执行 Win32 操作和明确请求的程序启动；health.executor 的 PID、exe、SID、session、integrity_rid 和 is_administrator 来自**执行端**。bridge 进程的权限不能替代验收。任务不是 SYSTEM、不是会话0；服务登录启动本身不启动用户程序或恢复任何日常计划。
@@ -91,7 +91,7 @@ DSH 配置备份位于 `.local/backups/cordis.patch.before-*.yml`；回退脚本
 
 - 管道只用 `\\.\pipe\WindowPilot.*`，拒绝远程客户端，显式ACL授予当前SID读写但不授予创建其他管道实例；管理员可创建服务实例。服务端再检查真实连接进程的SID/session，客户端检查真正服务PID、Python路径及高完整性。
 - 普通桥只转发 initialize/ping/tools/list/tools/call；服务分发9项工具，新增通用 launch_app，仍无键盘、剪贴板或 UIA 输入接口。独立 CLI 的 stop 控制仅结束此服务。
-- launch_app 明确接收用户点名的可执行路径、参数和工作目录，不接收执行端服务路径或修改服务配置。每条连接有独立临时token/帧/故障范围，实际操作串行；更新/重启/断连不恢复旧 token、未完成点击或测试会话。客户端不自动重连重发，也无低权限/截图后端回退。
+- launch_app 明确接收用户点名的可执行路径、参数和工作目录，不接收执行端服务路径或修改服务配置。每条连接有独立临时token/帧，同一执行端共享每窗口操作权、观察版本和未知故障；不同窗口可并行，共享审计仅短暂锁定写入，详见 [COORDINATION](COORDINATION.md)；更新/重启/断连不恢复旧 token、未完成点击或测试会话。客户端不自动重连重发，也无低权限/截图后端回退。
 - 精确身份、显式绑定授权、30秒新帧、单次消费、几何/坐标检查、点击后新图确认与部分派发证据都保留。默认使用同进程接收窗口；只对 [严格核验的 Static/WebView2 嵌入链](GENERIC_WINDOWS.md#嵌入-webview2-窗口) 允许同用户同会话、可证实进程亲缘的 WebView2 子进程。最终接收窗口与按下/松开状态写入审计；高于执行端或受保护的窗口仍可能拒绝。
 - 源码、Python运行时和安装路径是用户信任的管理员程序；对它们的修改会影响之后的管理员执行。这是限定IPC接口，不是防御同一账户恶意改源码的安全沙箱。仅对本项目服务私有目录设置ACL，不改变UAC、消息过滤或系统全局策略。
 

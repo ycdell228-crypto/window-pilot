@@ -53,6 +53,8 @@ api(U, "ChildWindowFromPointEx", W.HWND, W.HWND, W.POINT, W.UINT)
 api(U, "GetAncestor", W.HWND, W.HWND, W.UINT)
 api(U, "GetDesktopWindow", W.HWND)
 api(U, "GetShellWindow", W.HWND)
+api(U, "GetClassLongW", W.DWORD, W.HWND, C.c_int)
+api(U, "GetDoubleClickTime", W.UINT)
 window_long = api(U, "GetWindowLongPtrW" if C.sizeof(PTR) == 8 else "GetWindowLongW", C.c_ssize_t, W.HWND, C.c_int)
 api(U, "SetProcessDpiAwarenessContext", W.BOOL, PTR)
 api(G, "CreateCompatibleDC", W.HDC, W.HDC)
@@ -491,17 +493,26 @@ def post(hwnd, msg, wp=0, lp=0):
     check(U.PostMessageW(hwnd, msg, wp, lp), "PostMessage (UIPI may block a higher-integrity target)")
 
 
-def click(target, size, x, y, before_dispatch=None):
+def click(target, size, x, y, before_dispatch=None, *, action="left_click", axis=None, steps=None):
     evidence = {"bound_window": asdict(target), "root_point": [x, y], "route": [],
-                "down_posted": False, "up_posted": False, "effect": "unverified"}
+                "down_posted": False, "up_posted": False, "effect": "unverified",
+                "action": action, "messages": []}
     try:
-        return _click(target, size, x, y, evidence, before_dispatch)
+        return _click(target, size, x, y, evidence, before_dispatch, action, axis, steps)
     except Exception as exc:
         exc.click_evidence = evidence
         raise
 
 
-def _click(target, size, x, y, evidence, before_dispatch):
+def _click(target, size, x, y, evidence, before_dispatch, action="left_click", axis=None, steps=None):
+    if action not in {"left_click", "right_click", "left_double_click", "scroll"}:
+        raise PilotError("INVALID_MOUSE_ACTION")
+    if action == "scroll":
+        axis = axis or "vertical"
+        if axis not in ("vertical", "horizontal") or type(steps) is not int or not -10 <= steps <= 10 or steps == 0:
+            raise PilotError("INVALID_SCROLL: axis vertical/horizontal, nonzero integer steps -10..10")
+    elif axis is not None or steps is not None:
+        raise PilotError("UNEXPECTED_SCROLL_PARAMETERS")
     verify(target)
     if geometry(target.hwnd) != tuple(size):
         raise PilotError("STALE_FRAME: resized; observe again")
@@ -511,6 +522,16 @@ def _click(target, size, x, y, evidence, before_dispatch):
     evidence["desktop_before"] = before
     hwnd, cx, cy = resolve_child(target, x, y, evidence)
     child_identity = identity(hwnd)
+    double_style, double_deadline = None, None
+    if action == "left_double_click":
+        C.set_last_error(0)
+        double_style = int(U.GetClassLongW(hwnd, -26))  # GCL_STYLE; class metadata, not GWL_STYLE.
+        if (not double_style and C.get_last_error()) or not double_style & 8:  # CS_DBLCLKS
+            raise PilotError("DOUBLE_CLICK_CLASS_UNSUPPORTED: no two-single-click fallback")
+        double_milliseconds = int(U.GetDoubleClickTime())
+        if double_milliseconds <= 0:
+            raise PilotError("DOUBLE_CLICK_TIMING_UNAVAILABLE")
+        evidence.update(receiver_class_style=double_style, double_click_time_ms=double_milliseconds)
 
     def revalidate(stage):
         verify(target)
@@ -523,31 +544,68 @@ def _click(target, size, x, y, evidence, before_dispatch):
                 raise PilotError("STALE_CHILD_ROUTE: " + stage)
         if identity(hwnd) != child_identity:
             raise PilotError("STALE_CHILD_WINDOW: " + stage)
+        if double_style is not None and int(U.GetClassLongW(hwnd, -26)) != double_style:
+            raise PilotError("STALE_DOUBLE_CLICK_CLASS: " + stage)
 
-    if before_dispatch:
-        before_dispatch(evidence)  # durable exact receiver evidence before any message
-    revalidate("before down")
     point = (cy & 0xffff) << 16 | (cx & 0xffff)
-
-    try:
-        # Deliberately no mouse-move, global hit-test, focus or activation call.
-        post(hwnd, 0x0201, 1, point)  # WM_LBUTTONDOWN
-        evidence["down_posted"] = True
-    except PilotError as exc:
-        raise PilotError(f"DISPATCH_FAILED: input_sent=false; {exc}") from exc
+    if action == "scroll":
+        origin = evidence["route"][0]["client_origin_screen"]
+        sx, sy = origin[0] + x, origin[1] + y
+        if not -32768 <= sx <= 32767 or not -32768 <= sy <= 32767:
+            raise PilotError("WHEEL_SCREEN_COORDINATE_OVERFLOW")
+        point = (sy & 0xffff) << 16 | (sx & 0xffff)
+        delta = steps * 120
+        sequence = [(0x020a if axis == "vertical" else 0x020e, (delta & 0xffff) << 16, "before wheel")]
+        evidence.update(axis=axis, steps=steps, wheel_delta=delta, message_point_screen=[sx, sy],
+                        wheel_receiver_selection="verified point-hit child; no focus lookup or parent retry")
+    elif action == "right_click":
+        sequence = [(0x0204, 2, "before down"), (0x0205, 0, "before release")]
+    elif action == "left_double_click":
+        sequence = [(0x0201, 1, "before down"), (0x0202, 0, "before release"),
+                    (0x0203, 1, "before double"), (0x0202, 0, "before double release")]
+    else:
+        sequence = [(0x0201, 1, "before down"), (0x0202, 0, "before release")]
+    evidence["message_coord_space"] = "screen_physical_pixels" if action == "scroll" else "receiver_client_physical_pixels"
+    evidence["planned_messages"] = [{"message": message, "wparam": wp, "lparam": point} for message, wp, _ in sequence]
+    if before_dispatch:
+        before_dispatch(evidence)  # durable receiver, complete plan and coordinate evidence before any message
     release_posted = False
     try:
-        revalidate("before release")
-        post(hwnd, 0x0202, 0, point)  # WM_LBUTTONUP
-        release_posted = True
-        evidence["up_posted"] = True
+        # No mouse-move, global hit-test, focus or activation calls.
+        for index, (message, wp, stage) in enumerate(sequence):
+            revalidate(stage)
+            if action == "left_double_click" and index == 2 and time.monotonic() > double_deadline:
+                raise PilotError("DOUBLE_CLICK_TIMING_EXPIRED: partial group; never replay")
+            item = {"message": message, "wparam": wp, "lparam": point, "stage": stage, "state": "attempted"}
+            evidence["messages"].append(item)
+            try:
+                post(hwnd, message, wp, point)
+            except PilotError:
+                item["state"] = "not_posted"
+                raise
+            item["state"] = "posted"
+            if index == 0 and action != "scroll":
+                evidence["down_posted"] = True
+                if action == "left_double_click":
+                    double_deadline = time.monotonic() + double_milliseconds / 1000
+            if index == len(sequence) - 1 and action != "scroll":
+                release_posted = True
+                evidence["up_posted"] = True  # final required release, also for double-click groups
         result = C.c_size_t()
         check(U.SendMessageTimeoutW(hwnd, 0, 0, 0, 2, 1000, C.byref(result)), "message barrier")
         time.sleep(0.1)
         revalidate("after dispatch")
         after = desktop_state()
     except Exception as exc:
-        raise PilotError("POST_DISPATCH_ERROR: input_sent=true; down_posted=true; "
+        confirmed = any(item["state"] == "posted" for item in evidence["messages"])
+        uncertain = any(item["state"] == "attempted" for item in evidence["messages"])
+        sent = confirmed or uncertain
+        if not sent and evidence["messages"]:
+            raise PilotError(f"DISPATCH_FAILED: input_sent=false; {exc}") from exc
+        if not sent:
+            raise
+        raise PilotError(f"POST_DISPATCH_ERROR: input_sent={'true' if confirmed else 'unknown'}; "
+                         f"down_posted={str(evidence['down_posted']).lower()}; "
                          f"up_posted={str(release_posted).lower()}; effect=unverified; do not replay; {exc}") from exc
     observation = click_desktop_diagnostic(before, after, target.hwnd)
     evidence["desktop_observation"] = observation
