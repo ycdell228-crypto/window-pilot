@@ -6,13 +6,10 @@
 
 [安装与最短接入 / Quick start](docs/INSTALL.md) · [管理员信任边界](#边界) · [启动限制](docs/LAUNCH_POLICY.md) · [证据保留策略](docs/RETENTION.md)
 
-```mermaid
-flowchart LR
-    H[DSH / Codex MCP宿主] --> D[普通stdio：截图与窗口操作]
-    H --> B[普通权限bridge]
-    B --> A[预授权管理员执行端]
-    A --> W[管理员窗口与启用的程序启动]
-```
+| 模式 | 接入路径 |
+|---|---|
+| 普通权限 | DSH / Codex → stdio → 普通权限窗口服务 |
+| 管理员 | DSH / Codex → 普通权限bridge → 同用户同会话管道 → 预授权管理员执行端 |
 
 管理员管道接受可访问的同账户同会话进程；图中的宿主不是唯一能调用它的程序。普通stdio可通过本地wheel隔离安装；管理员模式须另外审查安装。
 
