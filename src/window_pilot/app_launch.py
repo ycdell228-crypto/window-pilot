@@ -15,6 +15,25 @@ from . import win32 as w
 REQUEST = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
+class LaunchPolicy:
+    """Optional operator restrictions, not same-account malicious-code isolation."""
+    def __init__(self, value):
+        if (not isinstance(value, dict) or set(value) - {"enabled", "allowlist"}
+                or type(value.get("enabled", True)) is not bool):
+            raise w.PilotError("INVALID_APP_LAUNCH_POLICY")
+        self.enabled = value.get("enabled", True)
+        entries = value.get("allowlist")
+        if "allowlist" in value and (not isinstance(entries, list) or any(not isinstance(p, str) for p in entries)):
+            raise w.PilotError("INVALID_APP_LAUNCH_ALLOWLIST")
+        self.allowlist = None if "allowlist" not in value else {w.canonical(str(local_path(p))) for p in entries}
+
+    def check(self, executable):
+        if not self.enabled:
+            raise w.PilotError("APP_LAUNCH_DISABLED_BY_POLICY")
+        if self.allowlist is not None and w.canonical(executable) not in self.allowlist:
+            raise w.PilotError("APP_LAUNCH_NOT_ALLOWLISTED")
+
+
 def local_path(value, directory=False):
     if not isinstance(value, str) or not value or "\0" in value or value.startswith("\\\\"):
         raise w.PilotError("LOCAL_ABSOLUTE_PATH_REQUIRED: no UNC/device path")
@@ -70,11 +89,15 @@ def result_error(value):
     raise w.PilotError(json.dumps(value, ensure_ascii=False))
 
 
-def launch(arguments, directory):
+def launch(arguments, directory, policy=None):
+    policy = policy if policy is not None else LaunchPolicy({})
+    if not policy.enabled:
+        raise w.PilotError("APP_LAUNCH_DISABLED_BY_POLICY")
     rid = w.input_integrity(os.getpid())
     if not 0x3000 <= rid < 0x4000:
         raise w.PilotError("ADMIN_EXECUTOR_REQUIRED: no per-call UAC or direct-stdio fallback")
     value, digest = plan(arguments)
+    policy.check(value["exe"])  # Before reserving request_id or creating a process.
     request_id = arguments["request_id"]
     directory = Path(directory)
     directory.mkdir(exist_ok=True)

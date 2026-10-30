@@ -6,8 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "window-pilot"
 version = "0.1.0"
 description = "Fail-closed HWND capture and background Windows input for MCP"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
+classifiers = ["Operating System :: Microsoft :: Windows", "Programming Language :: Python :: 3"]
 
 [project.scripts]
 window-pilot = "window_pilot.__main__:main"

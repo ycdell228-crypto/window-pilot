@@ -1,13 +1,15 @@
+param([string]$Destination = '')
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
-$destination = Join-Path $project 'dist'
+if (-not $Destination) { $Destination = Join-Path $project 'dist' }
+$destination = [IO.Path]::GetFullPath($Destination)
 [IO.Directory]::CreateDirectory($destination) | Out-Null
 $archive = Join-Path $destination 'window-pilot-0.1.0-source.zip'
 if (Test-Path -LiteralPath $archive) { throw 'Archive already exists; inspect it before replacing' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::Open($archive, [IO.Compression.ZipArchiveMode]::Create)
 try {
-    $files = @('README.md', 'NOTICE.md', 'pyproject.toml', '.gitignore', 'config.example.json')
+    $files = @('README.md', 'NOTICE.md', 'LICENSE', 'AGENTS.md', 'pyproject.toml', 'setup.py', 'MANIFEST.in', '.gitignore', 'config.example.json')
     foreach ($folder in @('src', 'tests', 'scripts', 'docs', '.github', 'dsh-plugin')) {
         $base = Join-Path $project $folder
         if (Test-Path -LiteralPath $base) {

@@ -2,5 +2,5 @@ param([string]$Python = 'python')
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
 $env:PYTHONPATH = Join-Path $project 'src'
-& $Python -m unittest discover -s (Join-Path $project 'tests') -v
+& $Python (Join-Path $PSScriptRoot 'test_runner.py')
 exit $LASTEXITCODE

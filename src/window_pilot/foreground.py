@@ -10,6 +10,7 @@ import threading
 import time
 from . import win32 as w
 from .input_monitor import InputMonitor, MonitorError, exact_key
+from .resources import runtime_script
 
 class Mouse(C.Structure):
     _fields_ = [('dx',W.LONG),('dy',W.LONG),('mouseData',W.DWORD),('dwFlags',W.DWORD),('time',W.DWORD),('extra',C.c_size_t)]
@@ -102,7 +103,7 @@ class FocusProbe:
         self.diagnostic={'stage':'startup','source':'transport','apartment':'unknown'}
         self.worker_stage=dict(self.diagnostic)
         ps=Path(os.environ['SystemRoot'])/'System32/WindowsPowerShell/v1.0/powershell.exe'
-        self.process=subprocess.Popen([str(ps),'-NoProfile','-NonInteractive','-MTA','-ExecutionPolicy','Bypass','-File',str(Path(__file__).resolve().parents[2]/'scripts/uia-focus.ps1')],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=subprocess.CREATE_NO_WINDOW)
+        self.process=subprocess.Popen([str(ps),'-NoProfile','-NonInteractive','-MTA','-ExecutionPolicy','Bypass','-File',str(runtime_script('uia-focus.ps1'))],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=subprocess.CREATE_NO_WINDOW)
         def reader():
             for line in self.process.stdout:
                 self.lines.put(line[:4096])

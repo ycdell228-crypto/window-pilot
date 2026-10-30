@@ -1,5 +1,7 @@
 # Window Pilot 三项优化汇总（三项均已逐项接受）
 
+后续本地改进（2026-10-30，待交验提交）：信任边界说明、保留策略、可选启动限制、CI结果范围及wheel安装路径见[DSH审查改进交付](REVIEW-FIXES-2026-10-30.md)。以下10-29发布与验收快照保留，不把本地新改动称为已发布或已部署。
+
 ## 当前发布与阅读入口（2026-10-29核对）
 
 - GitHub `ycdell228-crypto/window-pilot` 的 `v0.1.0` 源码基准固定为 [b60cfa55c17fd361330ce1d12df075f4cfcc2720](https://github.com/ycdell228-crypto/window-pilot/commit/b60cfa55c17fd361330ce1d12df075f4cfcc2720)，包含三项优化；[已发布 README](https://github.com/ycdell228-crypto/window-pilot/blob/v0.1.0/README.md)是该版本功能概览。[v0.1.0 预发布](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.1.0)及 WP-NEXT-017 保留发布范围。本次文档上传前重新核对 `main` 也为该提交，随后仅向 `main` 追加文档修订；最新文档提交以[main 历史](https://github.com/ycdell228-crypto/window-pilot/commits/main/)核对，不移动版本标签。

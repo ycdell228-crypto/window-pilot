@@ -318,7 +318,8 @@ def capture_worker(target):
 
 
 def runtime_command(command, *args):
-    entry = Path(__file__).resolve().parents[2] / "scripts" / "runtime_entry.py"
+    from .resources import runtime_script
+    entry = runtime_script("runtime_entry.py")
     if not entry.is_file():
         raise PilotError("RUNTIME_ENTRY_MISSING")
     python = Path(sys.executable)

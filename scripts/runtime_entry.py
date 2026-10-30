@@ -4,7 +4,13 @@ import sys
 
 sys.dont_write_bytecode = True
 project = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(project / "src"))
+if (project / "src/window_pilot/__init__.py").is_file():
+    sys.path.insert(0, str(project / "src"))
+elif (project / "__init__.py").is_file():
+    # Bundled in site-packages/window_pilot/_resources; -I -S needs this explicit path.
+    sys.path.insert(0, str(project.parent))
+else:
+    raise RuntimeError("WINDOW_PILOT_RUNTIME_LAYOUT_INVALID")
 dependencies = project / ".local" / "wgc-deps"
 if dependencies.is_dir():
     sys.path.insert(1, str(dependencies))

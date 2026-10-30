@@ -1,3 +1,8 @@
 {
-  "window_control": {"capture_backend": "wgc"}
+  "window_control": {"capture_backend": "wgc"},
+  "app_launch": {"enabled": true},
+  "retention": {
+    "frames": {"max_files": 512, "max_bytes": 268435456, "max_age_days": 30},
+    "audit": {"max_bytes": 8388608, "backups": 4}
+  }
 }

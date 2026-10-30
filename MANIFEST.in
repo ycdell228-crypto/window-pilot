@@ -1,0 +1,2 @@
+include scripts/runtime_entry.py
+include scripts/uia-*.ps1

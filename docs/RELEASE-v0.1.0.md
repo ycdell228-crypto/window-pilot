@@ -2,6 +2,8 @@ Window Pilot 首个 GitHub 预发布，供 DSH 与 Codex 用户试用。版本 `
 
 ### 最新开发文档
 
+main后续开发已增加证据保留策略、可选程序启动限制及wheel/pipx安装路径，见[10月30日改进](https://github.com/ycdell228-crypto/window-pilot/blob/main/docs/REVIEW-FIXES-2026-10-30.md)和[最新安装说明](https://github.com/ycdell228-crypto/window-pilot/blob/main/docs/INSTALL.md)。这些后续改动不在本页v0.1.0标签及自动源码包中；本页下列版本能力与27项普通检查仍仅对应冻结版本，不能用main的38项检查替代。
+
 本标签及自动源码包保留发布时快照；后续文档整理不移动标签，也不代表功能或本机部署升级。接手开发请先读 main 分支的[当前开发规则](https://github.com/ycdell228-crypto/window-pilot/blob/main/AGENTS.md)与[发布和历史文档入口](https://github.com/ycdell228-crypto/window-pilot/blob/main/docs/OPTIMIZATION-SUMMARY-2026-10-29.md)，不要把历史隔离目录、待审/未发布措辞或旧代验收流程当成当前任务授权。下列版本功能、验证及安装链接仍对应 v0.1.0。
 
 ### 可用能力

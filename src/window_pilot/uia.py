@@ -7,6 +7,7 @@ import subprocess
 import time
 
 from . import win32 as w
+from .resources import runtime_script
 
 
 def worker_diagnostics(stderr):
@@ -30,7 +31,7 @@ def observe(target, max_nodes=64, max_depth=5, timeout=6):
     origin = w.W.POINT(0, 0)
     w.check(w.U.ClientToScreen(target.hwnd, w.C.byref(origin)), "UIA client origin")
     started = time.time()
-    script = Path(__file__).resolve().parents[2] / "scripts/uia-observe.ps1"
+    script = runtime_script("uia-observe.ps1")
     powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     payload = {"hwnd": target.hwnd, "pid": target.pid, "max_nodes": max_nodes, "max_depth": max_depth}
     try:
@@ -113,7 +114,7 @@ def act(target, observation, node, arguments, timeout=6):
     if {"x": origin.x, "y": origin.y, "width": width, "height": height} != observation["geometry"]:
         raise w.PilotError("UIA_WINDOW_GEOMETRY_CHANGED")
     powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-    script = Path(__file__).resolve().parents[2] / "scripts/uia-observe.ps1"
+    script = runtime_script("uia-observe.ps1")
     payload = {"mode": "action", "hwnd": target.hwnd, "pid": target.pid, "identity": asdict(target),
                "geometry": observation["geometry"], "expected_nodes": observation["nodes"],
                "deadline_epoch": observation["deadline_epoch"],
