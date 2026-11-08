@@ -21,6 +21,8 @@ try {
 using System;
 using System.Runtime.InteropServices;
 public static class UiaReadDpi {
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
     [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr child);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
@@ -224,6 +226,19 @@ public sealed class SelectionRead {
                  foreign_process_subtrees_skipped = $state.foreign_process_subtrees_skipped }
     if ($request.mode -eq 'action') {
         $stage = 'validate_observation'
+        function CheckBackground {
+            $foreground = [UiaReadDpi]::GetForegroundWindow()
+            [uint32]$foregroundPid = 0
+            $foregroundTid = [UiaReadDpi]::GetWindowThreadProcessId($foreground, [ref]$foregroundPid)
+            if ($foreground -eq [IntPtr]::Zero -or $foregroundTid -eq 0 -or $foregroundPid -eq 0) {
+                throw 'UIA_BACKGROUND_FOREGROUND_UNAVAILABLE'
+            }
+            if ($foregroundPid -eq $request.pid -or
+                [UiaReadDpi]::GetAncestor($foreground, 3) -eq [UiaReadDpi]::GetAncestor([IntPtr]([long]$request.hwnd), 3)) {
+                throw 'UIA_BACKGROUND_TARGET_IN_USE'
+            }
+        }
+        CheckBackground
         function CheckRoot {
             $identity = $request.identity
             [uint32]$actualPid = 0
@@ -297,6 +312,7 @@ public sealed class SelectionRead {
             $ancestorNode = $nodes[[int]$ancestorNode.parent_index]
         }
         $stage = 'dispatch'
+        CheckBackground
         $attempted = $true
         switch ([string]$request.action) {
             'invoke' { $pattern.Invoke() }
@@ -307,6 +323,7 @@ public sealed class SelectionRead {
             'scroll' { $pattern.Scroll([System.Windows.Automation.ScrollAmount]::$($request.horizontal),
                                       [System.Windows.Automation.ScrollAmount]::$($request.vertical)) }
         }
+        CheckBackground
         $result = @{ status = 'provider_returned'; action_attempted = $true; effect = 'unverified' }
     }
 } catch {
@@ -318,7 +335,8 @@ public sealed class SelectionRead {
     if ($request.mode -eq 'action') {
         # Provider messages may echo a SetValue input; never return/log them.
         $code = ($message -split ':', 2)[0]
-        $allowedCodes = @('UIA_ROOT_UNAVAILABLE', 'UIA_ROOT_IDENTITY_MISMATCH', 'UIA_AMBIGUOUS_RUNTIME_ID',
+        $allowedCodes = @('UIA_BACKGROUND_TARGET_IN_USE', 'UIA_BACKGROUND_FOREGROUND_UNAVAILABLE',
+            'UIA_ROOT_UNAVAILABLE', 'UIA_ROOT_IDENTITY_MISMATCH', 'UIA_AMBIGUOUS_RUNTIME_ID',
             'UIA_WINDOW_IDENTITY_CHANGED', 'UIA_WINDOW_GEOMETRY_CHANGED', 'UIA_STALE_OBSERVATION',
             'UIA_OBSERVATION_CHANGED', 'UIA_CONTROL_NOT_IN_OBSERVATION', 'UIA_CONTROL_DISABLED',
             'UIA_PASSWORD_CONTROL_REFUSED', 'UIA_CONTROL_NOT_VISIBLE', 'UIA_PATTERN_UNSUPPORTED',

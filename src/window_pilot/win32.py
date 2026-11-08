@@ -254,6 +254,20 @@ def desktop_state():
     return {"foreground": int(U.GetForegroundWindow() or 0), "cursor": [point.x, point.y]}
 
 
+def require_background_target(target):
+    """Refuse background input into the foreground application's process/window family.
+
+    This is a dispatch-time check, not atomic desktop isolation or a focus lock.
+    """
+    foreground = int(U.GetForegroundWindow() or 0)
+    pid = W.DWORD()
+    if not foreground or not U.GetWindowThreadProcessId(foreground, C.byref(pid)) or not pid.value:
+        raise PilotError("BACKGROUND_FOREGROUND_UNAVAILABLE: no input; no foreground fallback")
+    if (foreground == target.hwnd or pid.value == target.pid or
+            U.GetAncestor(foreground, 3) == U.GetAncestor(target.hwnd, 3)):
+        raise PilotError("BACKGROUND_TARGET_IN_USE: foreground application owns target; no input")
+
+
 def click_desktop_diagnostic(before, after, target_hwnd):
     """Describe observed changes without attributing them to the posted click.
 
@@ -536,6 +550,7 @@ def _click(target, size, x, y, evidence, before_dispatch, action="left_click", a
 
     def revalidate(stage):
         verify(target)
+        require_background_target(target)
         if geometry(target.hwnd) != tuple(size):
             raise PilotError("STALE_FRAME: resized; " + stage)
         current = {"route": []}

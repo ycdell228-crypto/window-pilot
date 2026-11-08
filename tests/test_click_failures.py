@@ -33,6 +33,12 @@ class ClickFailureTests(unittest.TestCase):
         self.service.frames["frame"] = {"target_id": "target", "size": (200, 100), "time": time.monotonic(),
                                         "coordination": self.service.coordinator.observe_begin(self.target)}
         self.stack = ExitStack()
+        self.foreground = self.stack.enter_context(patch.object(w.U, "GetForegroundWindow", return_value=2))
+        self.foreground_pid = 999
+        def foreground_process(hwnd, pid):
+            w.C.cast(pid, w.C.POINTER(w.W.DWORD)).contents.value = self.foreground_pid
+            return 111
+        self.stack.enter_context(patch.object(w.U, "GetWindowThreadProcessId", side_effect=foreground_process))
         # A valid bound root and its own child; no fake HWND is queried on the desktop.
         self.stack.enter_context(patch.object(w, "identity", side_effect=self.identity))
         self.geometry = self.stack.enter_context(patch.object(w, "geometry", return_value=(200, 100)))
@@ -78,6 +84,8 @@ class ClickFailureTests(unittest.TestCase):
         return self.identities[hwnd]
 
     def ancestor(self, hwnd, kind):
+        if kind == 3:  # GA_ROOTOWNER: unrelated foreground has a distinct family.
+            return self.target.hwnd if hwnd == self.child.hwnd else hwnd
         if kind == 2:  # GA_ROOT
             return self.target.hwnd
         return self.target.hwnd if hwnd == self.child.hwnd else 9000
@@ -131,6 +139,34 @@ class ClickFailureTests(unittest.TestCase):
                          [(self.child.hwnd, 0x0201, 1), (self.child.hwnd, 0x0202, 0)])
         self.assertEqual(self.barrier.call_count, 1)
         self.assertNotIn("frame", self.service.frames)
+
+    def test_foreground_target_refuses_without_posting(self):
+        self.foreground.return_value = self.target.hwnd
+        self.assert_failed_before_dispatch("BACKGROUND_TARGET_IN_USE")
+
+    def test_other_window_of_foreground_process_refuses(self):
+        self.foreground_pid = self.target.pid
+        self.assert_failed_before_dispatch("BACKGROUND_TARGET_IN_USE")
+
+    def test_unknown_foreground_refuses_without_posting(self):
+        self.foreground.return_value = 0
+        self.assert_failed_before_dispatch("BACKGROUND_FOREGROUND_UNAVAILABLE")
+
+    def test_foreground_switch_after_down_stops_release_and_latches_fault(self):
+        self.after_down = lambda: setattr(self.foreground, "return_value", self.target.hwnd)
+        with self.assertRaisesRegex(w.PilotError, "POST_DISPATCH_ERROR.*BACKGROUND_TARGET_IN_USE"):
+            self.call()
+        self.assertEqual(self.post.call_count, 1)
+        self.assertTrue(self.service.faulted)
+        self.assertNotIn("frame", self.service.frames)
+
+    def test_uia_foreground_refusal_never_starts_action_worker(self):
+        from window_pilot import uia
+        self.foreground.return_value = self.target.hwnd
+        with patch.object(uia.subprocess, "run") as worker:
+            with self.assertRaisesRegex(w.PilotError, "BACKGROUND_TARGET_IN_USE"):
+                uia.act(self.target, {}, {}, {"action": "invoke"})
+            worker.assert_not_called()
 
     def test_zero_accepted_events_with_unknown_foreground_reply_still_faults_shared_input(self):
         from window_pilot import foreground

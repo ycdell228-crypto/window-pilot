@@ -114,6 +114,7 @@ def act(target, observation, node, arguments, timeout=6):
     """One provider call. Any uncertain outcome must stop input; never retry."""
     validate_action(arguments)
     w.bindable(target)
+    w.require_background_target(target)
     if w.input_access(target)["blocked_by_integrity"]:
         raise w.PilotError("UIA_HIGHER_INTEGRITY_TARGET")
     own_scope, target_scope = w.process_scope(os.getpid()), w.process_scope(target.pid)

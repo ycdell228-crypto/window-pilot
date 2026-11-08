@@ -33,6 +33,7 @@ reviewed_effect_no_replay; then observe again before a NEW action. Disconnection
 Capture only the bound client's own pixels; no desktop, region or backend fallback.
 Convert preview coordinates with image_to_client_scale. Respect identity, geometry and receiver checks.
 Background mouse uses local messages; UIA uses explicit patterns. Neither grants global input.
+Background input refuses foreground-owned targets (same process or window family); no automatic activation.
 Foreground actions use the real desktop only with observe_and_foreground: verify safe target-owned
 focus and held-input checks; reject password/unverified focus, stop on interference, release owned input.
 The desktop gate covers this executor only; separate executors and human input are not isolated.
@@ -227,6 +228,8 @@ class Service:
         ticket = None
         try:
             if authorized and token in self.targets:
+                if name in ("click", "control_action"):
+                    w.require_background_target(self.targets[token])
                 with self.coordinator.command(self.connection_id, self.targets[token], foreground=name == "foreground_action") as ticket:
                     self._input_ticket = ticket
                     try:
@@ -463,7 +466,7 @@ class Service:
                                         "control_input_grant": "bind access=observe_and_control with human-task purpose; UIA patterns only; no global keyboard",
                                         "bound_count": len(self.bindings), "fault_scope": "uncertain input shared by exact window; other validation faults per binding"},
                     "observation_desktop_policy": "report-only; target/dispatch checks remain strict",
-                    "input_desktop_policy": "background click/UIA desktop samples are report-only; explicit foreground_action separately enforces foreground/focus/geometry and held-input checks",
+                    "input_desktop_policy": "background click/UIA refuse foreground-owned process/window-family targets; dispatch-time checks are not atomic isolation; explicit foreground_action has separate focus/held-input checks",
                     "input": "separate targeted PostMessage, UIA pattern, or explicit observe_and_foreground scopes; no per-call elevation", "faulted": self.faulted,
                     "faulted_binding_count": sum(bool(v["input_faulted"]) for v in self.bindings.values()),
                     "coordination": {"shared_executor": self.coordinator.shared, "ownership": "explicit window_control acquire before observe" if self.coordinator.shared else
