@@ -54,9 +54,9 @@ BACKEND = {"type": "string", "enum": ["printwindow", "wgc"]}
 SCROLL_AMOUNT = {"type": "string", "enum": ["NoAmount", "SmallIncrement", "SmallDecrement", "LargeIncrement", "LargeDecrement"]}
 
 TOOLS = [
-    ("get_window_state", "Read selected state of one bound window: screenshot and/or UIA tree with bounded values/document/selection text. Read-only, no focus or input. Separate reads are NOT atomic; IDs retain existing 30s/single-use rules. UIA failure is explicit and grants no control action; capture failure has no fallback. Text is provider-scoped, password-filtered, and may be unsupported/truncated. Defaults include both sections and text.",
+    ("get_window_state", "Read selected state of one bound window: screenshot and/or UIA tree with bounded text; includes related-window metadata unless include_related_windows=false. Related windows require explicit separate binding, never automatic capture/input. Read-only, no focus or input. Reads are NOT atomic; IDs retain 30s/single-use rules. UIA failure grants no control action; capture failure has no fallback. Text is provider-scoped, password-filtered and may be unsupported/truncated. Defaults include both sections and text.",
      schema({"target_id": STR, "include_screenshot": {"type": "boolean"}, "include_accessibility": {"type": "boolean"},
-             "include_text": {"type": "boolean"}, "capture_backend": BACKEND,
+             "include_text": {"type": "boolean"}, "include_related_windows": {"type": "boolean"}, "capture_backend": BACKEND,
              "max_nodes": {"type": "integer", "minimum": 1, "maximum": 128},
              "max_depth": {"type": "integer", "minimum": 0, "maximum": 8},
              "max_text_length": {"type": "integer", "minimum": 1, "maximum": 2048},
@@ -68,7 +68,7 @@ TOOLS = [
              "observation_id": STR, "purpose": STR, "confirmation": {"type": "string", "enum": ["reviewed_effect_no_replay"]},
              "evidence_kind": {"type": "string", "enum": ["frame", "controls"]}},
             ["target_id", "operation"])),
-    ("list_windows", "Enumerate accessible, visible, nonminimized/noncloaked application top-level windows and exact identity metadata. No fixed app/game allowlist; enumeration is not click authorization or capture compatibility proof.", schema()),
+    ("list_windows", "Enumerate accessible application top-level windows. Optional target_id filters by verified Win32 owner relationships and reports possible blocking dialogs. Same process alone is not a relationship. Enumeration grants no capture/input, never switches bindings or focus; explicitly bind the chosen HWND.", schema({"target_id": STR})),
     ("bind_window", "Bind selected existing top-level HWND/PID/creation/path/thread/class. Defaults observe-only. With human-task purpose: observe_and_click grants only left-single messages; observe_and_mouse grants local left/right/double/wheel; observe_and_control separately grants UIA patterns. Only observe_and_foreground separately grants explicit real foreground actions. Exact window/session only.",
      schema({"hwnd": INT, "access": {"type": "string", "enum": ["observe", "observe_and_click", "observe_and_mouse", "observe_and_control", "observe_and_foreground"]}, "purpose": STR, "capture_backend": BACKEND}, ["hwnd"])),
     ("unbind_window", "Revoke one exact window token and its unused frames. No native window action or automatic rebind.",
@@ -387,6 +387,7 @@ class Service:
                     control_args = {key: args[key] for key in ("target_id", "max_nodes", "max_depth", "max_text_length", "max_total_text_length") if key in args}
                     control_args["include_text"] = args.get("include_text", True)
                     controls = self.dispatch("observe_controls", control_args)
+                related = self.dispatch("list_windows", {"target_id": token}) if args.get("include_related_windows", True) else None
                 w.verify(target)
                 self.coordinator.validate_stamp(target, stamp)
                 if (current_geometry() != initial_geometry
@@ -405,6 +406,7 @@ class Service:
                 result = {"target_id": token, "identity": asdict(target), "read_only": True,
                           "atomic_snapshot": False, "started_at": started, "finished_at": time.time(),
                           "screenshot": frame, "accessibility": controls,
+                          "related_windows": related,
                           "status": "partial" if controls and controls["status"] not in ("ok", "empty") else "ok"}
                 # Keep image at the transport's established top-level delivery slot.
                 if frame:
@@ -474,6 +476,9 @@ class Service:
                     "fixture_pid": self.fixture.pid if self.fixture and self.fixture.poll() is None else None,
                     "desktop": w.desktop_state()}
         if name == "list_windows":
+            if "target_id" in args:
+                target = self.target(args["target_id"])
+                return {"target_id": args["target_id"], **w.related_windows(target, self.accessible_windows())}
             return {"windows": self.accessible_windows(), "scope": "accessible_application_top_level",
                     "authorization": "enumeration does not authorize clicks; bind explicit access within user's task"}
         if name == "bind_window":

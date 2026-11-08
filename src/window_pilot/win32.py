@@ -51,6 +51,7 @@ api(U, "SendMessageTimeoutW", W.LPARAM, W.HWND, W.UINT, W.WPARAM,
 api(U, "PrintWindow", W.BOOL, W.HWND, W.HDC, W.UINT)
 api(U, "ChildWindowFromPointEx", W.HWND, W.HWND, W.POINT, W.UINT)
 api(U, "GetAncestor", W.HWND, W.HWND, W.UINT)
+api(U, "GetWindow", W.HWND, W.HWND, W.UINT)
 api(U, "GetDesktopWindow", W.HWND)
 api(U, "GetShellWindow", W.HWND)
 api(U, "GetClassLongW", W.DWORD, W.HWND, C.c_int)
@@ -228,6 +229,58 @@ def windows():
 
     check(U.EnumWindows(visit, 0), "EnumWindows")
     return result
+
+
+def owner_chain(hwnd):
+    chain, seen = [], {hwnd}
+    for _ in range(16):
+        owner = int(U.GetWindow(hwnd, 4) or 0)  # GW_OWNER, not parent/child hierarchy
+        if not owner:
+            return chain
+        if owner in seen:
+            raise PilotError("WINDOW_OWNER_CYCLE")
+        chain.append(owner)
+        seen.add(owner)
+        hwnd = owner
+    raise PilotError("WINDOW_OWNER_DEPTH_LIMIT")
+
+
+def related_windows(target, candidates):
+    """Read owner relationships only; same PID alone is not a popup relationship."""
+    verify(target)
+    target_chain = owner_chain(target.hwnd)
+    target_enabled = bool(U.IsWindowEnabled(target.hwnd))
+    result, skipped = [], 0
+    for row in candidates:
+        if row["hwnd"] == target.hwnd:
+            continue
+        try:
+            candidate = Identity(**{key: row[key] for key in Identity.__dataclass_fields__})
+            verify(candidate)
+            chain = owner_chain(candidate.hwnd)
+            if target.hwnd in chain:
+                relationship = "owned_descendant"
+            elif candidate.hwnd in target_chain:
+                relationship = "owner"
+            elif set(chain) & set(target_chain):
+                relationship = "shared_owner"
+            else:
+                continue
+            enabled = bool(U.IsWindowEnabled(candidate.hwnd))
+            verify(candidate)
+            if owner_chain(candidate.hwnd) != chain:
+                raise PilotError("WINDOW_OWNER_CHANGED")
+            result.append({**row, "relationship": relationship, "owner_chain": chain, "enabled": enabled,
+                           "may_block_target": not target_enabled and enabled and relationship == "owned_descendant"})
+        except PilotError:
+            skipped += 1
+    verify(target)
+    if owner_chain(target.hwnd) != target_chain or bool(U.IsWindowEnabled(target.hwnd)) != target_enabled:
+        raise PilotError("WINDOW_OWNER_CHANGED: observe related windows again")
+    return {"windows": result, "target_enabled": target_enabled, "skipped_unstable": skipped,
+            "scope": "accessible visible top-level windows with Win32 owner relationships; not all application popups",
+            "modal_status": "candidate_only; disabled owner does not prove a modal dialog",
+            "next": "explicitly bind a returned HWND with the required access; no automatic switch or input grant"}
 
 
 def bindable(target):
