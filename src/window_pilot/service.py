@@ -53,6 +53,13 @@ BACKEND = {"type": "string", "enum": ["printwindow", "wgc"]}
 SCROLL_AMOUNT = {"type": "string", "enum": ["NoAmount", "SmallIncrement", "SmallDecrement", "LargeIncrement", "LargeDecrement"]}
 
 TOOLS = [
+    ("get_window_state", "Read selected state of one bound window: screenshot and/or UIA tree with bounded values/document/selection text. Read-only, no focus or input. Separate reads are NOT atomic; IDs retain existing 30s/single-use rules. UIA failure is explicit and grants no control action; capture failure has no fallback. Text is provider-scoped, password-filtered, and may be unsupported/truncated. Defaults include both sections and text.",
+     schema({"target_id": STR, "include_screenshot": {"type": "boolean"}, "include_accessibility": {"type": "boolean"},
+             "include_text": {"type": "boolean"}, "capture_backend": BACKEND,
+             "max_nodes": {"type": "integer", "minimum": 1, "maximum": 128},
+             "max_depth": {"type": "integer", "minimum": 0, "maximum": 8},
+             "max_text_length": {"type": "integer", "minimum": 1, "maximum": 2048},
+             "max_total_text_length": {"type": "integer", "minimum": 1, "maximum": 32768}}, ["target_id"])),
     ("health", "Report policy and session state. Does not launch apps.", schema()),
     ("window_control", "Exact-window ownership acquire/renew (10..120s, default60), release/status, prepare_recovery, recover. Status diagnoses pending input. prepare_recovery acquires a write binding and captures one fresh frame (or nonempty controls via evidence_kind), or reuses a supplied fresh evidence ID; returns evidence and exact next-call arguments, never input or automatic recovery. Host must assess effect, then explicitly submit recover with purpose + reviewed_effect_no_replay. Unknown/unreviewed faults survive leases/reconnects; failed/empty reads never clear them. Recover requires owner/current epoch/30s evidence, invalidates it, then requires new observation. No replay or expanded grant; no mandatory human prompt.",
      schema({"target_id": STR, "operation": {"type": "string", "enum": ["acquire", "renew", "release", "status", "prepare_recovery", "recover"]},
@@ -103,6 +110,7 @@ def validate_arguments(name, args):
     for key, value in args.items():
         kind = spec["properties"][key]
         if ((kind["type"] == "integer" and type(value) is not int)
+                or (kind["type"] == "boolean" and type(value) is not bool)
                 or (kind["type"] == "string" and not isinstance(value, str))
                 or (kind["type"] == "array" and (not isinstance(value, list) or len(value) > kind.get("maxItems", 128)
                                                   or any(not isinstance(item, str) for item in value)))
@@ -227,7 +235,7 @@ class Service:
                         self._input_ticket = None
             return self._call(name, args)
         except Exception as exc:
-            if token in self.targets and name in ("click", "control_action", "foreground_action", "window_control", "observe", "observe_controls"):
+            if token in self.targets and name in ("click", "control_action", "foreground_action", "window_control", "observe", "observe_controls", "get_window_state"):
                 attempt = ("not_sent" if ticket is None or not ticket.started or
                            (ticket.outcome_known and not ticket.sent and not ticket.unknown) else
                            "partial_or_unknown")
@@ -352,6 +360,59 @@ class Service:
             raise
 
     def dispatch(self, name, args):
+        if name == "get_window_state":
+            screenshot = args.get("include_screenshot", True)
+            accessibility = args.get("include_accessibility", True)
+            if not screenshot and not accessibility:
+                raise w.PilotError("WINDOW_STATE_EMPTY_REQUEST")
+            token = args["target_id"]
+            target = self.target(token)
+            stamp = self.coordinator.observe_begin(target)
+            started = time.time()
+            frame = None
+            try:
+                def current_geometry():
+                    origin = w.W.POINT(0, 0)
+                    w.check(w.U.ClientToScreen(target.hwnd, w.C.byref(origin)), "window state client origin")
+                    width, height = w.geometry(target.hwnd)
+                    return {"x": origin.x, "y": origin.y, "width": width, "height": height}
+
+                initial_geometry = current_geometry()
+                frame = self.dispatch("observe", {key: args[key] for key in ("target_id", "capture_backend") if key in args}) if screenshot else None
+                controls = None
+                if accessibility:
+                    control_args = {key: args[key] for key in ("target_id", "max_nodes", "max_depth", "max_text_length", "max_total_text_length") if key in args}
+                    control_args["include_text"] = args.get("include_text", True)
+                    controls = self.dispatch("observe_controls", control_args)
+                w.verify(target)
+                self.coordinator.validate_stamp(target, stamp)
+                if (current_geometry() != initial_geometry
+                        or (frame and (frame["width"], frame["height"]) !=
+                            (initial_geometry["width"], initial_geometry["height"]))
+                        or (controls and controls["geometry"] != initial_geometry)):
+                    raise w.PilotError("WINDOW_STATE_GEOMETRY_CHANGED: discard combined state; observe again")
+                if frame:
+                    stored_frame = self.frames[frame["frame_id"]]
+                    if time.monotonic() - stored_frame["time"] > 30:
+                        raise w.PilotError("STALE_FRAME: unified read exceeded observation lifetime")
+                    if controls:
+                        controls["frame_id"] = frame["frame_id"]
+                        if token in self.control_observations:
+                            self.control_observations[token]["frame_id"] = frame["frame_id"]
+                result = {"target_id": token, "identity": asdict(target), "read_only": True,
+                          "atomic_snapshot": False, "started_at": started, "finished_at": time.time(),
+                          "screenshot": frame, "accessibility": controls,
+                          "status": "partial" if controls and controls["status"] not in ("ok", "empty") else "ok"}
+                # Keep image at the transport's established top-level delivery slot.
+                if frame:
+                    result["image"] = frame.pop("image")
+                    result["image_mime_type"] = frame["image_mime_type"]
+                return result
+            except Exception:
+                self.control_observations.pop(token, None)
+                if frame:
+                    self.frames.pop(frame["frame_id"], None)
+                raise
         if name == "window_control":
             token, operation = args["target_id"], args["operation"]
             target = self.target(token)
@@ -481,7 +542,10 @@ class Service:
             if "frame_id" in args:
                 self.fresh_frame(args["frame_id"], token)
             self.invalidate_window_observations(target)
-            result = uia.observe(target, args.get("max_nodes", 64), args.get("max_depth", 5))
+            result = uia.observe(target, args.get("max_nodes", 64), args.get("max_depth", 5),
+                                 include_text=args.get("include_text", False),
+                                 max_text_length=args.get("max_text_length", 512),
+                                 max_total_text_length=args.get("max_total_text_length", 8192))
             usable = result["status"] == "ok" and bool(result["nodes"])
             if usable:
                 self.coordinator.observe_end(self.connection_id, target, stamp)
@@ -502,6 +566,7 @@ class Service:
             return {**result, "coordination_epoch": stamp.epoch, "target_id": token, "observation_id": observation_id, "frame_id": args.get("frame_id"),
                     "control_id_scope": "this observation/window/connection only; 30s; whole observation consumed by one action; superseded by next screenshot/UIA/input/unbind",
                     "focused_control_ids": [node["control_id"] for node in result["nodes"] if node["state"]["has_keyboard_focus"]],
+                    "selected_control_ids": [node["control_id"] for node in result["nodes"] if node.get("pattern_state", {}).get("selected") is True],
                     "focus_scope": "returned nodes only; absence does not prove no focus in the app",
                     "supported_patterns_mean": "provider-advertised capabilities only; no action executed"}
         if name == "control_action":

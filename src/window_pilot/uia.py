@@ -13,6 +13,7 @@ from .resources import runtime_script
 def worker_diagnostics(stderr):
     events = []
     allowed = {"script_start", "assemblies_loaded", "interop_compiled", "root_resolved", "proxies_registered", "tree_read"}
+    allowed.update(prefix + field for prefix in ("read_", "done_") for field in ("value", "document_text", "selected_text"))
     for line in (stderr or b"").decode("utf8", "replace").splitlines():
         parts = line.split()
         if len(parts) == 4 and parts[0] == "UIA_STAGE" and parts[1] in allowed and parts[2].isdigit() and parts[3] in ("MTA", "STA"):
@@ -20,9 +21,12 @@ def worker_diagnostics(stderr):
     return {"stages": events, "last_stage": events[-1]["stage"] if events else "process_start_before_script_progress"}
 
 
-def observe(target, max_nodes=64, max_depth=5, timeout=6):
+def observe(target, max_nodes=64, max_depth=5, timeout=6, *, include_text=False, max_text_length=512, max_total_text_length=8192):
     if type(max_nodes) is not int or not 1 <= max_nodes <= 128 or type(max_depth) is not int or not 0 <= max_depth <= 8:
         raise w.PilotError("UIA_INVALID_LIMITS: max_nodes=1..128, max_depth=0..8")
+    if (type(include_text) is not bool or type(max_text_length) is not int or not 1 <= max_text_length <= 2048
+            or type(max_total_text_length) is not int or not 1 <= max_total_text_length <= 32768):
+        raise w.PilotError("UIA_INVALID_TEXT_LIMITS")
     w.bindable(target)
     permission = w.input_access(target)
     if permission["blocked_by_integrity"]:
@@ -31,9 +35,11 @@ def observe(target, max_nodes=64, max_depth=5, timeout=6):
     origin = w.W.POINT(0, 0)
     w.check(w.U.ClientToScreen(target.hwnd, w.C.byref(origin)), "UIA client origin")
     started = time.time()
+    desktop_before = w.desktop_state()
     script = runtime_script("uia-observe.ps1")
     powershell = Path(os.environ["SystemRoot"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     payload = {"hwnd": target.hwnd, "pid": target.pid, "max_nodes": max_nodes, "max_depth": max_depth}
+    payload.update(include_text=include_text, max_text_length=max_text_length, max_total_text_length=max_total_text_length)
     try:
         worker = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-MTA", "-ExecutionPolicy", "Bypass", "-File", str(script)],
                                 input=json.dumps(payload).encode("ascii"), capture_output=True,
@@ -67,12 +73,17 @@ def observe(target, max_nodes=64, max_depth=5, timeout=6):
         bounds = node["bounds_screen"]
         node["bounds_client"] = ({**bounds, "x": bounds["x"] - origin.x, "y": bounds["y"] - origin.y} if bounds else None)
     result.update(identity=asdict(target), started_at=started, finished_at=time.time(),
+                  desktop_observation=w.click_desktop_diagnostic(desktop_before, w.desktop_state(), target.hwnd),
                   geometry={"x": origin.x, "y": origin.y, "width": size[0], "height": size[1]},
                   limits={"max_nodes": max_nodes, "max_depth": max_depth, "timeout_seconds": timeout},
                   coord_space="physical_pixels; bounds_client may extend outside client area",
                   scope="bound_window_control_view_same_process_only", read_only=True,
                   empty_means="no descendant controls returned; the bound root may still be included",
-                  values_read=False, atomic_snapshot=False)
+                  values_read=include_text and result["status"] in ("ok", "empty"), atomic_snapshot=False,
+                  text_policy={"requested": include_text, "per_field_utf16_limit": max_text_length,
+                               "total_utf16_limit": max_total_text_length, "max_selection_ranges": 16,
+                               "selection_provider": "Win32 Edit only; other providers explicitly unsupported",
+                               "scope": "per returned control; provider IsPassword filtering, not image redaction"})
     return result
 
 

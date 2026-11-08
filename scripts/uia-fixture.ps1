@@ -27,12 +27,14 @@ Identify $button 'invoke-button' 'Invoke fixture button'
 $disabled = [Windows.Controls.Button]::new(); $disabled.Content = 'Disabled fixture button'; $disabled.IsEnabled = $false
 Identify $disabled 'disabled-button' 'Disabled fixture button'
 $inputBox = [Windows.Controls.TextBox]::new(); $inputBox.Text = 'initial'
+$inputBox.Select(1, 3)
 Identify $inputBox 'value-field' 'Value field'
 $echo = [Windows.Controls.TextBlock]::new(); $echo.Text = 'Value echo: initial'
 Identify $echo 'value-status' 'Value echo: initial'
 $inputBox.Add_TextChanged({ $echo.Text = 'Value echo: ' + $inputBox.Text
     [Windows.Automation.AutomationProperties]::SetName($echo, $echo.Text) })
 $password = [Windows.Controls.PasswordBox]::new()
+$password.Password = 'fixture-private-value'
 Identify $password 'password-field' 'Password field'
 $list = [Windows.Controls.ListBox]::new(); $list.Height = 65
 foreach ($label in @('Option A', 'Option B')) {

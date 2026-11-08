@@ -16,7 +16,8 @@ try {
     Add-Type -AssemblyName UIAutomationTypes
     Add-Type -AssemblyName UIAutomationClientsideProviders
     Progress 'assemblies_loaded'
-    Add-Type -TypeDefinition @'
+    Add-Type -ReferencedAssemblies @([System.Windows.Automation.AutomationElement].Assembly.Location,
+                                    [System.Windows.Automation.AutomationPattern].Assembly.Location) -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class UiaReadDpi {
@@ -28,6 +29,21 @@ public static class UiaReadDpi {
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hwnd, ref Point point);
+}
+public sealed class SelectionRead {
+    public string Text;
+    public bool Truncated;
+    public static SelectionRead Read(System.Windows.Automation.TextPattern pattern, int limit) {
+        var ranges = pattern.GetSelection();
+        var text = new System.Text.StringBuilder();
+        bool truncated = ranges.Length > 16;
+        for (int i = 0; i < Math.Min(16, ranges.Length); i++) {
+            if (text.Length > limit) { truncated = true; break; }
+            if (i > 0) text.Append('\n');
+            text.Append(ranges[i].GetText(Math.Max(1, limit + 1 - text.Length)));
+        }
+        return new SelectionRead { Text = text.ToString(), Truncated = truncated };
+    }
 }
 '@
     [void][UiaReadDpi]::SetProcessDpiAwarenessContext([IntPtr](-4))
@@ -121,6 +137,83 @@ public static class UiaReadDpi {
     }
     Visit $root $null 0
     Progress 'tree_read'
+    if ($request.include_text -and $request.mode -ne 'action') {
+        $textBudget = @{ remaining = [int]$request.max_total_text_length }
+        function TextResult($value, $extraTruncated = $false) {
+            $value = [string]$value
+            $limit = [Math]::Min([int]$request.max_text_length, $textBudget.remaining)
+            $cut = [Math]::Min($value.Length, $limit)
+            # UTF-16 truncation must not leave half of a surrogate pair.
+            if ($cut -gt 0 -and $cut -lt $value.Length -and [char]::IsHighSurrogate($value[$cut - 1])) { $cut-- }
+            $truncated = $extraTruncated -or $value.Length -gt $cut
+            $textBudget.remaining -= $cut
+            return @{ status = $(if ($truncated) { 'truncated' } elseif ($cut -eq 0) { 'empty' } else { 'ok' })
+                      text = $value.Substring(0, $cut); truncated = [bool]$truncated }
+        }
+        foreach ($node in $nodes) {
+            $node.text = @{}
+            $element = $elements[($node.runtime_id -join ',')]
+            # Suppress password controls, their descendants and aggregate ancestors.
+            $blocked = $false
+            foreach ($passwordNode in $nodes) {
+                if (-not $passwordNode.state.password) { continue }
+                $cursor = $node
+                while ($null -ne $cursor) {
+                    if ($cursor.index -eq $passwordNode.index) { $blocked = $true; break }
+                    $cursor = if ($null -eq $cursor.parent_index) { $null } else { $nodes[[int]$cursor.parent_index] }
+                }
+                $cursor = $passwordNode
+                while ($null -ne $cursor) {
+                    if ($cursor.index -eq $node.index) { $blocked = $true; break }
+                    $cursor = if ($null -eq $cursor.parent_index) { $null } else { $nodes[[int]$cursor.parent_index] }
+                }
+            }
+            foreach ($field in @('value', 'document_text', 'selected_text')) {
+                if ($blocked) { $node.text[$field] = @{ status = 'password_filtered' }; continue }
+                $patternName = if ($field -eq 'value') { 'Value' } else { 'Text' }
+                if ($node.supported_patterns -notcontains ($patternName + 'PatternIdentifiers.Pattern')) {
+                    $node.text[$field] = @{ status = 'unsupported' }; continue
+                }
+                # Selection reads are enabled only for the built-in Win32 Edit proxy validated here.
+                # WPF TextBox ranges hung during GetText while unfocused. Never focus the app to fix this.
+                if ($field -eq 'selected_text' -and $node.class_name -cne 'Edit') {
+                    $node.text[$field] = @{ status = 'unsupported'; reason = 'background_selection_provider_not_validated' }; continue
+                }
+                # Incomplete trees cannot establish absence of password descendants for aggregate text.
+                if ($field -ne 'value' -and ($state.truncated -or $state.foreign_process_subtrees_skipped -gt 0)) {
+                    $node.text[$field] = @{ status = 'unavailable'; reason = 'incomplete_privacy_scope' }; continue
+                }
+                if ($textBudget.remaining -le 0) { $node.text[$field] = @{ status = 'truncated'; text = ''; truncated = $true }; continue }
+                try {
+                    Progress ('read_' + $field)
+                    if ($element.Current.IsPassword) { $node.text[$field] = @{ status = 'password_filtered' }; continue }
+                    if ($field -eq 'value') {
+                        $value = $element.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+                        $read = TextResult $value
+                    } else {
+                        $pattern = $element.GetCurrentPattern([System.Windows.Automation.TextPattern]::Pattern)
+                        $limit = [Math]::Min([int]$request.max_text_length, $textBudget.remaining)
+                        if ($field -eq 'document_text') {
+                            $read = TextResult ($pattern.DocumentRange.GetText($limit + 1))
+                        } elseif ($pattern.SupportedTextSelection -eq [System.Windows.Automation.SupportedTextSelection]::None) {
+                            $read = @{ status = 'unsupported' }
+                        } else {
+                            $selection = [SelectionRead]::Read($pattern, $limit)
+                            $read = TextResult $selection.Text $selection.Truncated
+                        }
+                    }
+                    if ($element.Current.IsPassword) { $read = @{ status = 'password_filtered' } }
+                    $node.text[$field] = $read
+                    Progress ('done_' + $field)
+                } catch {
+                    # Provider exceptions can contain document contents; never echo them.
+                    $node.text[$field] = @{ status = 'unavailable'; reason = 'provider_read_failed'
+                                           error_type = $_.Exception.GetBaseException().GetType().Name
+                                           hresult = $_.Exception.GetBaseException().HResult }
+                }
+            }
+        }
+    }
     $final = $root.Current
     if ([long]$final.NativeWindowHandle -ne [long]$request.hwnd -or $final.ProcessId -ne $request.pid) {
         throw 'UIA_ROOT_IDENTITY_MISMATCH'
@@ -236,7 +329,7 @@ public static class UiaReadDpi {
                      error = $known; hresult = $_.Exception.GetBaseException().HResult }
     } else {
         $result = @{ status = $status; nodes = @(); error_stage = $stage
-                     error = $message.Substring(0, [Math]::Min(400, $message.Length)) }
+                     error = 'UIA_OBSERVATION_FAILED' }
     }
 }
 [Console]::Out.WriteLine(($result | ConvertTo-Json -Depth 18 -Compress))
