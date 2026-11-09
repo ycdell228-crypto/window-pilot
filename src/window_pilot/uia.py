@@ -87,7 +87,7 @@ def observe(target, max_nodes=64, max_depth=5, timeout=6, *, include_text=False,
     return result
 
 
-ACTIONS = {"invoke", "set_value", "select", "expand", "collapse", "scroll"}
+ACTIONS = {"invoke", "set_value", "type_text", "select", "expand", "collapse", "scroll"}
 SCROLL_AMOUNTS = {"NoAmount", "SmallIncrement", "SmallDecrement", "LargeIncrement", "LargeDecrement"}
 
 
@@ -96,7 +96,7 @@ def validate_action(arguments):
     if action not in ACTIONS:
         raise w.PilotError("UIA_INVALID_ACTION")
     extras = set(arguments) - {"target_id", "observation_id", "control_id", "action"}
-    if action == "set_value":
+    if action in {"set_value", "type_text"}:
         value = arguments.get("value")
         if extras != {"value"} or not isinstance(value, str) or len(value) > 2048 or "\0" in value:
             raise w.PilotError("UIA_INVALID_VALUE: string up to 2048 characters, no NUL")
@@ -160,6 +160,7 @@ def act(target, observation, node, arguments, timeout=6, *, check_running=None):
                "geometry": observation["geometry"], "expected_nodes": observation["nodes"],
                "deadline_epoch": observation["deadline_epoch"],
                "runtime_id": node["runtime_id"], **observation["limits"],
+               "include_edit_state": any("native_edit" in item for item in observation["nodes"]),
                **{key: arguments[key] for key in ("action", "value", "horizontal", "vertical") if key in arguments}}
     payload.setdefault("horizontal", "NoAmount")
     payload.setdefault("vertical", "NoAmount")

@@ -152,7 +152,7 @@ def run(interactive=False):
                                     260, 60, 220, 130, target, None, instance, None), "fixture mouse child")
     check(U.CreateWindowExW(0x08000000, "WindowPilotNoDoubleSurface", "No double-click class", 0x50000000,
                            260, 195, 220, 20, target, None, instance, None), "fixture no-double child")
-    # Native child providers for read-only UIA validation; tests never invoke/type into these.
+    # Native child providers; text-input tests explicitly unlock only their own Edit fixture.
     for klass, label, style, y in (("BUTTON", "UIA sample button", 0, 60),
                                    ("EDIT", "Fixture read-only sample", 0x0800, 100),
                                    ("BUTTON", "UIA disabled button", 0x08000000, 140)):

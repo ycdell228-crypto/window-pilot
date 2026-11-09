@@ -70,8 +70,15 @@ class BackgroundCapabilitiesNativeTests(unittest.TestCase):
                 self.assertFalse(result["action_attempted"])
                 self.assertFalse(service.faulted)
                 self.assertNotIn(token, service.control_observations)
-                _, after_node = read()
+                after_tree, after_node = read()
                 self.assertEqual(after_node["text"]["value"], old_value)
+                unsupported = service.call("control_action", {"target_id": token,
+                    "observation_id": after_tree["observation_id"], "control_id": after_node["control_id"],
+                    "action": "type_text", "value": "must not be entered"})
+                self.assertEqual(unsupported["status"], "rejected", unsupported)
+                self.assertEqual(unsupported["error"], "UIA_BACKGROUND_TYPE_TEXT_UNSUPPORTED")
+                self.assertFalse(unsupported["action_attempted"])
+                self.assertEqual(read()[1]["text"]["value"], old_value)
                 after = w.desktop_state()
                 # Other foreground windows may change while the human continues working.
                 # Sampling is bounded evidence, not proof against sub-sample transitions.

@@ -27,6 +27,11 @@ public static class UiaReadDpi {
     [DllImport("user32.dll")] public static extern bool IsChild(IntPtr parent, IntPtr child);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder text, int count);
+    [DllImport("user32.dll", EntryPoint="GetWindowLongW")] public static extern int GetStyle(IntPtr hwnd, int index);
+    [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW", SetLastError=true)]
+    public static extern IntPtr ReadSelection(IntPtr hwnd, uint message, ref uint start, ref uint end, uint flags, uint timeout, out UIntPtr result);
+    [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW", CharSet=CharSet.Unicode, SetLastError=true)]
+    public static extern IntPtr ReplaceSelection(IntPtr hwnd, uint message, UIntPtr undo, string text, uint flags, uint timeout, out UIntPtr result);
     [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
@@ -69,7 +74,7 @@ public sealed class SelectionRead {
     $nodes = [Collections.Generic.List[object]]::new()
     $elements = @{}
     $state = @{ truncated = $false; foreign_process_subtrees_skipped = 0 }
-    $actionPatterns = @{ invoke = 'Invoke'; set_value = 'Value'; select = 'SelectionItem'
+    $actionPatterns = @{ invoke = 'Invoke'; set_value = 'Value'; type_text = 'Value'; select = 'SelectionItem'
                          expand = 'ExpandCollapse'; collapse = 'ExpandCollapse'; scroll = 'Scroll' }
     function ActionSupport($node, $action) {
         $patternName = $actionPatterns[$action]
@@ -81,8 +86,32 @@ public sealed class SelectionRead {
         elseif (-not $patternName -or $node.supported_patterns -notcontains ($patternName + 'PatternIdentifiers.Pattern')) { $reason = 'UIA_PATTERN_UNSUPPORTED' }
         elseif ($action -eq 'set_value' -and $node.pattern_state.value_read_only) { $reason = 'UIA_VALUE_READ_ONLY' }
         elseif ($action -eq 'set_value' -and $node.framework_id -eq 'WPF') { $reason = 'UIA_BACKGROUND_WPF_SET_VALUE_REFUSED' }
+        elseif ($action -eq 'type_text' -and $node.native_edit.status -ne 'ok') { $reason = 'UIA_BACKGROUND_TYPE_TEXT_UNSUPPORTED' }
         return @{ status = $(if ($reason) { 'refused' } else { 'unverified' }); reason = $reason
-                  execution_method = ('UIA.' + $patternName + 'Pattern'); background_safety_verified = $false }
+                  execution_method = $(if ($action -eq 'type_text') { 'Win32.EM_REPLACESEL' } else { 'UIA.' + $patternName + 'Pattern' }); background_safety_verified = $false }
+    }
+    function NativeEditInfo($element, $handle) {
+        $native = [IntPtr]([long]$handle)
+        $class = [Text.StringBuilder]::new(256)
+        [void][UiaReadDpi]::GetClassName($native, $class, 256)
+        [uint32]$nativePid = 0
+        [void][UiaReadDpi]::GetWindowThreadProcessId($native, [ref]$nativePid)
+        $style = [UiaReadDpi]::GetStyle($native, -16)
+        if ($handle -eq 0 -or $class.ToString() -cne 'Edit' -or $nativePid -ne $request.pid -or
+            ($style -band 0x820) -ne 0 -or $element.Current.IsPassword -or $element.Current.FrameworkId -cne 'Win32') {
+            return @{ status = 'unsupported' }
+        }
+        $value = [string]$element.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern).Current.Value
+        if ($value.Length -gt 32768) { return @{ status = 'unsupported'; reason = 'text_limit' } }
+        [uint32]$start = 0; [uint32]$end = 0; [UIntPtr]$result = [UIntPtr]::Zero
+        if ([UiaReadDpi]::ReadSelection($native, 0xB0, [ref]$start, [ref]$end, 0x23, 500, [ref]$result) -eq [IntPtr]::Zero) {
+            return @{ status = 'unavailable' }
+        }
+        if ($start -gt $end -or $end -gt $value.Length) { return @{ status = 'unavailable' } }
+        $hash = [Security.Cryptography.SHA256]::Create()
+        try { $digest = [Convert]::ToBase64String($hash.ComputeHash([Text.Encoding]::Unicode.GetBytes($value))) }
+        finally { $hash.Dispose() }
+        return [ordered]@{ status = 'ok'; start = $start; end = $end; length = $value.Length; value_sha256 = $digest; multiline = (($style -band 4) -ne 0) }
     }
     function LimitedText($value, $limit) {
         $value = [string]$value
@@ -145,6 +174,16 @@ public sealed class SelectionRead {
                        password = $current.IsPassword }
             bounds_screen = $bounds; supported_patterns = $patterns
         })
+        $passwordAncestor = $false; $parentCursor = $parent
+        while ($null -ne $parentCursor) {
+            if ($nodes[[int]$parentCursor].state.password) { $passwordAncestor = $true; break }
+            $parentCursor = $nodes[[int]$parentCursor].parent_index
+        }
+        if (-not $passwordAncestor -and ($request.include_text -or $request.include_edit_state) -and $current.ClassName -ceq 'Edit' -and
+            $current.FrameworkId -ceq 'Win32' -and -not $current.IsPassword -and
+            $patterns -contains 'ValuePatternIdentifiers.Pattern') {
+            $nodes[$index].native_edit = NativeEditInfo $element $handle
+        }
         $child = $walker.GetFirstChild($element)
         if ($null -ne $child -and $depth -ge $request.max_depth) { $state.truncated = $true; return }
         while ($null -ne $child) {
@@ -289,7 +328,8 @@ public sealed class SelectionRead {
                 patterns = @($node.supported_patterns | Sort-Object)
                 selected = $node.pattern_state.selected; expanded = $node.pattern_state.expand_collapse
                 h_scroll = $node.pattern_state.horizontal_scroll_percent; v_scroll = $node.pattern_state.vertical_scroll_percent
-                read_only = $node.pattern_state.value_read_only } | ConvertTo-Json -Depth 8 -Compress
+                read_only = $node.pattern_state.value_read_only
+                native_edit = $node.native_edit } | ConvertTo-Json -Depth 8 -Compress
         }
         CheckRoot
         if ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() / 1000.0 -ge $request.deadline_epoch) { throw 'UIA_STALE_OBSERVATION' }
@@ -327,11 +367,23 @@ public sealed class SelectionRead {
             $ancestorNode = $nodes[[int]$ancestorNode.parent_index]
         }
         $stage = 'dispatch'
+        if ($request.action -eq 'type_text') {
+            $latestEdit = NativeEditInfo $element $selected.native_window_handle
+            if (($latestEdit | ConvertTo-Json -Compress) -cne ($selected.native_edit | ConvertTo-Json -Compress)) { throw 'UIA_EDIT_STATE_CHANGED' }
+            if (-not $latestEdit.multiline -and ([string]$request.value -match '[\r\n]')) { throw 'UIA_EDIT_MULTILINE_REQUIRED' }
+        }
         CheckBackground
         $attempted = $true
         switch ([string]$request.action) {
             'invoke' { $pattern.Invoke() }
             'set_value' { $pattern.SetValue([string]$request.value) }
+            'type_text' {
+                [UIntPtr]$nativeResult = [UIntPtr]::Zero
+                if ([UiaReadDpi]::ReplaceSelection([IntPtr]([long]$selected.native_window_handle), 0xC2,
+                    [UIntPtr]::new([uint32]1), [string]$request.value, 0x23, 500, [ref]$nativeResult) -eq [IntPtr]::Zero) {
+                    throw 'UIA_EDIT_DISPATCH_UNKNOWN'
+                }
+            }
             'select' { $pattern.Select() }
             'expand' { $pattern.Expand() }
             'collapse' { $pattern.Collapse() }
@@ -350,7 +402,8 @@ public sealed class SelectionRead {
     if ($request.mode -eq 'action') {
         # Provider messages may echo a SetValue input; never return/log them.
         $code = ($message -split ':', 2)[0]
-        $allowedCodes = @('UIA_BACKGROUND_WPF_SET_VALUE_REFUSED', 'UIA_BACKGROUND_TARGET_IN_USE', 'UIA_BACKGROUND_FOREGROUND_UNAVAILABLE',
+        $allowedCodes = @('UIA_BACKGROUND_TYPE_TEXT_UNSUPPORTED', 'UIA_EDIT_STATE_CHANGED', 'UIA_EDIT_MULTILINE_REQUIRED', 'UIA_EDIT_DISPATCH_UNKNOWN',
+            'UIA_BACKGROUND_WPF_SET_VALUE_REFUSED', 'UIA_BACKGROUND_TARGET_IN_USE', 'UIA_BACKGROUND_FOREGROUND_UNAVAILABLE',
             'UIA_ROOT_UNAVAILABLE', 'UIA_ROOT_IDENTITY_MISMATCH', 'UIA_AMBIGUOUS_RUNTIME_ID',
             'UIA_WINDOW_IDENTITY_CHANGED', 'UIA_WINDOW_GEOMETRY_CHANGED', 'UIA_STALE_OBSERVATION',
             'UIA_OBSERVATION_CHANGED', 'UIA_CONTROL_NOT_IN_OBSERVATION', 'UIA_CONTROL_DISABLED',
