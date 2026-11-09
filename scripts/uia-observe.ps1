@@ -86,6 +86,7 @@ public sealed class SelectionRead {
         elseif (-not $patternName -or $node.supported_patterns -notcontains ($patternName + 'PatternIdentifiers.Pattern')) { $reason = 'UIA_PATTERN_UNSUPPORTED' }
         elseif ($action -eq 'set_value' -and $node.pattern_state.value_read_only) { $reason = 'UIA_VALUE_READ_ONLY' }
         elseif ($action -eq 'set_value' -and $node.framework_id -eq 'WPF') { $reason = 'UIA_BACKGROUND_WPF_SET_VALUE_REFUSED' }
+        elseif ($action -eq 'set_value' -and $node.framework_id -eq 'Win32') { $reason = 'UIA_BACKGROUND_WIN32_SET_VALUE_REFUSED' }
         elseif ($action -eq 'type_text' -and $node.native_edit.status -ne 'ok') { $reason = 'UIA_BACKGROUND_TYPE_TEXT_UNSUPPORTED' }
         return @{ status = $(if ($reason) { 'refused' } else { 'unverified' }); reason = $reason
                   execution_method = $(if ($action -eq 'type_text') { 'Win32.EM_REPLACESEL' } else { 'UIA.' + $patternName + 'Pattern' }); background_safety_verified = $false }
@@ -403,7 +404,7 @@ public sealed class SelectionRead {
         # Provider messages may echo a SetValue input; never return/log them.
         $code = ($message -split ':', 2)[0]
         $allowedCodes = @('UIA_BACKGROUND_TYPE_TEXT_UNSUPPORTED', 'UIA_EDIT_STATE_CHANGED', 'UIA_EDIT_MULTILINE_REQUIRED', 'UIA_EDIT_DISPATCH_UNKNOWN',
-            'UIA_BACKGROUND_WPF_SET_VALUE_REFUSED', 'UIA_BACKGROUND_TARGET_IN_USE', 'UIA_BACKGROUND_FOREGROUND_UNAVAILABLE',
+            'UIA_BACKGROUND_WPF_SET_VALUE_REFUSED', 'UIA_BACKGROUND_WIN32_SET_VALUE_REFUSED', 'UIA_BACKGROUND_TARGET_IN_USE', 'UIA_BACKGROUND_FOREGROUND_UNAVAILABLE',
             'UIA_ROOT_UNAVAILABLE', 'UIA_ROOT_IDENTITY_MISMATCH', 'UIA_AMBIGUOUS_RUNTIME_ID',
             'UIA_WINDOW_IDENTITY_CHANGED', 'UIA_WINDOW_GEOMETRY_CHANGED', 'UIA_STALE_OBSERVATION',
             'UIA_OBSERVATION_CHANGED', 'UIA_CONTROL_NOT_IN_OBSERVATION', 'UIA_CONTROL_DISABLED',
