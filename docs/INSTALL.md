@@ -57,7 +57,7 @@ window-pilot serve --config 'C:\path\to\pilot-data\config.json'
 python scripts/verify-wheel.py dist/window_pilot-0.1.0-py3-none-any.whl --evidence .local/wheel-smoke
 ```
 
-该检查在临时venv安装真正wheel、从非源码目录启动console入口，验证13项工具、普通模式拒绝程序启动及隔离子进程导入。另加`--native`会显示并关闭项目自己的测试窗口，验证真实PrintWindow截图和只读UIA；不发键鼠输入、不安装管理员服务、不连接现有执行端。输出wheel-smoke.json；原生模式另有installed-fixture.png。需要交互桌面权限时应在用户已同意的环境执行，不用普通CI绿灯替代。
+该检查在临时venv安装真正wheel、从非源码目录启动console入口，验证15项工具、普通模式拒绝程序启动及隔离子进程导入。另加`--native`会显示并关闭项目自己的测试窗口，验证真实PrintWindow截图和只读UIA；不发键鼠输入、不安装管理员服务、不连接现有执行端。输出wheel-smoke.json；原生模式另有installed-fixture.png。需要交互桌面权限时应在用户已同意的环境执行，不用普通CI绿灯替代。
 
 卸载pipx应用用`pipx uninstall window-pilot`；venv方式在宿主移除该MCP配置并停止进程后可移除自己创建的venv。两者均不卸载另行安装的管理员任务，也不删除config目录中的证据或去重回执，管理员回退见[ADMIN_SERVICE](ADMIN_SERVICE.md)。
 

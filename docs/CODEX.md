@@ -1,8 +1,14 @@
 # Codex stdio 接入与配置预览
 
-Window Pilot 的 `serve` 与 `bridge` 都是按行 JSON-RPC 的 stdio MCP，和 DSH 共用13项工具及 text/image 交付。Codex 不需要安装 DSH 原生包。运行环境是同一用户的交互式 Windows 10/11、Python 3.12+；不是 WSL、云端或锁屏桌面。WGC/Pillow 依赖仍按 README 显式准备，PrintWindow 自有窗口验证无需第三方依赖。
+Window Pilot 的 `serve` 与 `bridge` 都是按行 JSON-RPC 的 stdio MCP，和 DSH 共用15项工具及 text/image 交付。Codex 不需要安装 DSH 原生包。运行环境是同一用户的交互式 Windows 10/11、Python 3.12+；不是 WSL、云端或锁屏桌面。WGC/Pillow 依赖仍按 README 显式准备，PrintWindow 自有窗口验证无需第三方依赖。
 
 配置字段依据 [OpenAI 官方 MCP 文档](https://developers.openai.com/codex/mcp/)（2026-10-28核对）：`mcp_servers`、`command`、`args`、`cwd`、`env`、`enabled` 和超时字段。官方支持用户级 `~/.codex/config.toml` 和项目级 `.codex/config.toml`；实际加载受本机版本、项目信任和管理员策略影响。生成 TOML 和协议通过不等于当前 Codex 已加载或模型已看见图片。
+
+## 当前功能与更新
+
+当前服务声明15项工具，新增 `get_window_state` 与 `input_control`。后台输入范围及拒绝项见[版本说明](RELEASE-BACKGROUND-2026-11-09.md)。已有源码 bridge 安装更新时，先核对并备份当前源码、服务清单和宿主配置，停止本安装执行端，再部署已验收源码并启动原有专用任务。使用新 bridge 连接重新初始化并读回 tools/list、health、实际PID及源码摘要，旧连接及其观察凭据不作为升级验证。
+
+包版本仍为0.1.0，更新身份以发布提交与 `health.executor.code_sha256` 共同确认。Codex 的现有 bridge 配置路径有效时可继续使用该配置。浏览器适配器尚未加入此MCP工具集。
 
 ## 先预览，不修改配置
 
@@ -45,7 +51,7 @@ PYTHONUNBUFFERED = "1"
 
 本轮不部署新版管理员执行端；若以后需要，先审阅 [ADMIN_SERVICE](ADMIN_SERVICE.md) 的具体任务、清单、安装与回退，再由用户决定。不要为验收普通 stdio 安装管理员任务。普通直连支持一个服务所有者；管理员端每条连接持有独立 token/帧，同一执行端共享窗口操作权、观察版本与未知故障门禁。输入前先获取操作权再新观察，流程及独立执行端边界见 [COORDINATION](COORDINATION.md)。
 
-真正接入须另行明确执行：先备份选定配置，再将审阅后的完整服务表与 env 子表合并到选定作用域，确认无同名条目且路径全为新版，明确启用 `enabled = true`，按当前客户端要求重连/重启。只加入禁用表不会出现工具。核验 MCP 状态、13项工具及 `health.executor.mode`；首次只用本项目 fixture，不能用用户应用验证安装。不要直接把预览追加到现有文件末尾造成重复表。
+真正接入须另行明确执行：先备份选定配置，再将审阅后的完整服务表与 env 子表合并到选定作用域，确认无同名条目且路径全为新版，明确启用 `enabled = true`，按当前客户端要求重连/重启。只加入禁用表不会出现工具。核验 MCP 状态、15项工具及 `health.executor.mode`；首次只用本项目 fixture，不能用用户应用验证安装。不要直接把预览追加到现有文件末尾造成重复表。
 
 回退：关闭该接入并重连，移除本次新增的服务表和 env 子表；如由备份恢复，先确认备份后没有其他有效修改。接入关闭使该连接 token/帧失效，不能重放动作。移除 bridge 配置不会停止独立管理员服务、删除任务或关闭用户应用；这些需要分别按已审阅服务方案处理。当前预览阶段无宿主配置需要回退。
 
