@@ -44,6 +44,7 @@ def exact_key(vk, scan=0, extended=False):
 
 class InputMonitor:
     def __init__(self):
+        self.check_running = None
         self.marker = secrets.randbits(31) or 1  # portable through Windows input paths retaining 32-bit extra info
         self.interrupted = threading.Event()
         self.ready = threading.Event()
@@ -139,6 +140,8 @@ class InputMonitor:
         return not self.failed and self.thread.is_alive() and not self.closed
 
     def check(self):
+        if self.check_running is not None:
+            self.check_running()
         now = time.monotonic()
         if not self.healthy():
             raise MonitorError("FOREGROUND_INPUT_MONITOR_UNAVAILABLE")

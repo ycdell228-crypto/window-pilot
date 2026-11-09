@@ -172,7 +172,7 @@ def inject(event):
     if w.U.SendInput(1,C.byref(event),C.sizeof(Input))!=1:
         raise w.PilotError('FOREGROUND_INJECTION_PARTIAL_OR_DENIED')
 
-def act(target,size,args,before_input):
+def act(target,size,args,before_input,*,check_running=None):
     validate(args,size)
     physical_clear()
     w.bindable(target); w.verify(target)
@@ -205,6 +205,7 @@ def act(target,size,args,before_input):
         return True
     try:
         monitor=InputMonitor()
+        monitor.check_running=check_running
         physical_clear()  # close held-input gap while the pass-through hooks were installing
         monitor.check()
         if args['action']=='activate':

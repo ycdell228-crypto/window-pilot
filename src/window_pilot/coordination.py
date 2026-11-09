@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 from contextlib import contextmanager
 import threading
+import secrets
 import time
 from .win32 import PilotError
 
@@ -65,6 +66,38 @@ class Coordinator:
         self._closed = set()
         self._foreground = False
         self._background = 0
+        self._stop_id = None
+
+    def ensure_running(self):
+        with self._lock:
+            if self._stop_id is not None:
+                raise CoordinationError("EXECUTOR_STOPPED: explicit user-requested resume required; no replay")
+
+    def stop_status(self):
+        with self._lock:
+            return {"stopped": self._stop_id is not None, "stop_id": self._stop_id,
+                    "in_flight": sum(state.active is not None for state in self._windows.values()),
+                    "scope": "all input connections in this executor; not other executors",
+                    "read_only_observation_allowed": True}
+
+    def stop_input(self):
+        with self._lock:
+            if self._stop_id is None:
+                self._stop_id = secrets.token_hex(16)
+                for state in self._windows.values():
+                    state.epoch += 1
+            return self.stop_status()
+
+    def resume_input(self, stop_id):
+        with self._lock:
+            if self._stop_id is None or stop_id != self._stop_id:
+                raise CoordinationError("STOP_ID_MISMATCH: read current stop status")
+            if any(state.active is not None for state in self._windows.values()):
+                raise CoordinationError("STOP_STILL_IN_FLIGHT: wait for native work and cleanup")
+            self._stop_id = None
+            for state in self._windows.values():
+                state.epoch += 1
+            return {**self.stop_status(), "next": "acquire/observe anew; existing input faults still require reviewed recovery"}
 
     def _state(self, key):
         if key not in self._windows:
@@ -192,6 +225,7 @@ class Coordinator:
     def command(self, connection, identity, *, foreground=False):
         key = WindowKey.from_identity(identity)
         with self._lock:
+            self.ensure_running()
             state = self._state(key)
             self._owner(state, connection)
             if state.fault is not None:
@@ -238,6 +272,7 @@ class Coordinator:
 
     def begin_input(self, ticket, identity, stamp):
         with self._lock:
+            self.ensure_running()
             state = self.validate_stamp(identity, stamp, ticket)
             self._owner(state, ticket.connection)
             if state.active is not ticket or ticket.started:

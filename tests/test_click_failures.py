@@ -168,6 +168,16 @@ class ClickFailureTests(unittest.TestCase):
                 uia.act(self.target, {}, {}, {"action": "invoke"})
             worker.assert_not_called()
 
+    def test_stop_after_down_stops_release_and_preserves_unknown_fault(self):
+        self.after_down = lambda: self.service.coordinator.stop_input()
+        with self.assertRaisesRegex(w.PilotError, "POST_DISPATCH_ERROR.*EXECUTOR_STOPPED"):
+            self.call()
+        self.assertEqual(self.post.call_count, 1)
+        self.assertTrue(self.service.faulted)
+        with self.assertRaisesRegex(w.PilotError, "EXECUTOR_STOPPED"):
+            self.call()
+        self.assertEqual(self.post.call_count, 1)
+
     def test_zero_accepted_events_with_unknown_foreground_reply_still_faults_shared_input(self):
         from window_pilot import foreground
         from window_pilot.coordination import Coordinator
@@ -178,7 +188,7 @@ class ClickFailureTests(unittest.TestCase):
         self.service.frames["frame"]["coordination"] = self.service.coordinator.observe_begin(self.target)
         # Controlled native-result boundary, not a claim of real desktop input.
         # Service, Dispatcher, input ticket and shared fault latch remain real.
-        def uncertain(target, size, arguments, begin):
+        def uncertain(target, size, arguments, begin, **kwargs):
             begin()
             return {"status":"unknown", "input_sent":False, "input_attempted":True,
                     "event_count":0, "delivery":"attempted_outcome_unknown", "effect":"unverified"}

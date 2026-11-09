@@ -110,7 +110,36 @@ def validate_action(arguments):
         raise w.PilotError("UIA_UNEXPECTED_ACTION_PARAMETER")
 
 
-def act(target, observation, node, arguments, timeout=6):
+def run_action_worker(command, payload, timeout, check_running):
+    if check_running is None:
+        return subprocess.run(command, input=payload, capture_output=True, timeout=timeout,
+                              creationflags=subprocess.CREATE_NO_WINDOW)
+    check_running()
+    with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          creationflags=subprocess.CREATE_NO_WINDOW) as process:
+        deadline = time.monotonic() + timeout
+        pending = payload
+        try:
+            while True:
+                try:
+                    check_running()
+                except w.PilotError as exc:
+                    raise ValueError("UIA_WORKER_STOPPED_OUTCOME_UNKNOWN") from exc
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, timeout)
+                try:
+                    stdout, stderr = process.communicate(input=pending, timeout=min(0.05, remaining))
+                    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+                except subprocess.TimeoutExpired:
+                    pending = None
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.communicate()
+
+
+def act(target, observation, node, arguments, timeout=6, *, check_running=None):
     """One provider call. Any uncertain outcome must stop input; never retry."""
     validate_action(arguments)
     w.bindable(target)
@@ -136,9 +165,8 @@ def act(target, observation, node, arguments, timeout=6):
     payload.setdefault("vertical", "NoAmount")
     before = w.desktop_state()
     try:
-        worker = subprocess.run([str(powershell), "-NoProfile", "-NonInteractive", "-MTA", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-                                input=json.dumps(payload, ensure_ascii=True).encode("ascii"), capture_output=True,
-                                timeout=timeout, creationflags=subprocess.CREATE_NO_WINDOW)
+        worker = run_action_worker([str(powershell), "-NoProfile", "-NonInteractive", "-MTA", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+                                   json.dumps(payload, ensure_ascii=True).encode("ascii"), timeout, check_running)
         result = json.loads(worker.stdout.decode("utf-8-sig")) if worker.returncode == 0 and len(worker.stdout) < 8192 else None
         if not isinstance(result, dict) or result.get("status") not in {"provider_returned", "rejected", "unknown"}:
             raise ValueError("invalid action reply")

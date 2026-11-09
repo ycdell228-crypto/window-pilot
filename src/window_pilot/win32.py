@@ -561,18 +561,18 @@ def post(hwnd, msg, wp=0, lp=0):
     check(U.PostMessageW(hwnd, msg, wp, lp), "PostMessage (UIPI may block a higher-integrity target)")
 
 
-def click(target, size, x, y, before_dispatch=None, *, action="left_click", axis=None, steps=None):
+def click(target, size, x, y, before_dispatch=None, *, action="left_click", axis=None, steps=None, check_running=None):
     evidence = {"bound_window": asdict(target), "root_point": [x, y], "route": [],
                 "down_posted": False, "up_posted": False, "effect": "unverified",
                 "action": action, "messages": []}
     try:
-        return _click(target, size, x, y, evidence, before_dispatch, action, axis, steps)
+        return _click(target, size, x, y, evidence, before_dispatch, action, axis, steps, check_running)
     except Exception as exc:
         exc.click_evidence = evidence
         raise
 
 
-def _click(target, size, x, y, evidence, before_dispatch, action="left_click", axis=None, steps=None):
+def _click(target, size, x, y, evidence, before_dispatch, action="left_click", axis=None, steps=None, check_running=None):
     if action not in {"left_click", "right_click", "left_double_click", "scroll"}:
         raise PilotError("INVALID_MOUSE_ACTION")
     if action == "scroll":
@@ -602,6 +602,8 @@ def _click(target, size, x, y, evidence, before_dispatch, action="left_click", a
         evidence.update(receiver_class_style=double_style, double_click_time_ms=double_milliseconds)
 
     def revalidate(stage):
+        if check_running is not None:
+            check_running()
         verify(target)
         require_background_target(target)
         if geometry(target.hwnd) != tuple(size):

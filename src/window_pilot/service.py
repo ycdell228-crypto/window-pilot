@@ -54,6 +54,9 @@ BACKEND = {"type": "string", "enum": ["printwindow", "wgc"]}
 SCROLL_AMOUNT = {"type": "string", "enum": ["NoAmount", "SmallIncrement", "SmallDecrement", "LargeIncrement", "LargeDecrement"]}
 
 TOOLS = [
+    ("input_control", "Executor-wide stop/status/resume for all input connections. Stop is idempotent, invalidates observations and cooperatively cancels in-flight input; already dispatched effects cannot be undone. Read-only observation/cleanup remain available. Resume ONLY after a new explicit HUMAN request, with current stop_id and confirmation; never auto-resume/restart/replay. Resume keeps unknown faults and invalidates observations again. Purpose/confirmation are caller statements, not proof of user authorization. Other executors and physical Esc are outside this tool.",
+     schema({"operation": {"type": "string", "enum": ["stop", "status", "resume"]}, "stop_id": STR,
+             "confirmation": {"type": "string", "enum": ["user_requested_resume"]}, "purpose": STR}, ["operation"])),
     ("get_window_state", "Read selected state of one bound window: screenshot and/or UIA tree with bounded text; includes related-window metadata unless include_related_windows=false. Related windows require explicit separate binding, never automatic capture/input. Read-only, no focus or input. Reads are NOT atomic; IDs retain 30s/single-use rules. UIA failure grants no control action; capture failure has no fallback. Text is provider-scoped, password-filtered and may be unsupported/truncated. Defaults include both sections and text.",
      schema({"target_id": STR, "include_screenshot": {"type": "boolean"}, "include_accessibility": {"type": "boolean"},
              "include_text": {"type": "boolean"}, "include_related_windows": {"type": "boolean"}, "capture_backend": BACKEND,
@@ -220,6 +223,8 @@ class Service:
         if self._disposed:
             raise CoordinationError("CONNECTION_CLOSED")
         validate_arguments(name, args)
+        if name in ("click", "control_action", "foreground_action", "launch_app", "launch_test"):
+            self.coordinator.ensure_running()
         token = args.get("target_id")
         binding = self.bindings.get(token, {})
         authorized = ((name == "click" and binding.get("access") in ("observe_and_click", "observe_and_mouse")) or
@@ -363,6 +368,16 @@ class Service:
             raise
 
     def dispatch(self, name, args):
+        if name == "input_control":
+            operation = args["operation"]
+            if operation in ("stop", "status"):
+                if set(args) != {"operation"}:
+                    raise CoordinationError("INVALID_STOP_PARAMETERS")
+                return self.coordinator.stop_input() if operation == "stop" else self.coordinator.stop_status()
+            if (set(args) != {"operation", "stop_id", "confirmation", "purpose"}
+                    or args["confirmation"] != "user_requested_resume" or not 1 <= len(args["purpose"].strip()) <= 300):
+                raise CoordinationError("EXPLICIT_USER_RESUME_REQUIRED")
+            return self.coordinator.resume_input(args["stop_id"])
         if name == "get_window_state":
             screenshot = args.get("include_screenshot", True)
             accessibility = args.get("include_accessibility", True)
@@ -599,7 +614,7 @@ class Service:
             tokens = self.invalidate_window_observations(target, frames=True)  # consume before worker, even if rejected
             self.audit("control_dispatch_prepared", arguments={key: value for key, value in args.items() if key != "value"},
                        value_length=len(args["value"]) if "value" in args else None)
-            result = uia.act(target, observation, candidates[0], args)
+            result = uia.act(target, observation, candidates[0], args, check_running=self.coordinator.ensure_running)
             if result["status"] == "unknown":
                 for affected in tokens:
                     self.bindings[affected]["input_faulted"] = True
@@ -626,6 +641,7 @@ class Service:
             self.invalidate_window_observations(target, frames=True)
             binding["awaiting_observation"] = True
             result = w.click(target, frame["size"], args["x"], args["y"],
+                             check_running=self.coordinator.ensure_running,
                              before_dispatch=lambda evidence: self.audit("click_dispatch_prepared",
                                  target_id=args["target_id"], frame_id=args["frame_id"], click_evidence=evidence),
                              **{key: args[key] for key in ("action", "axis", "steps") if key in args})
@@ -646,7 +662,7 @@ class Service:
                 self.invalidate_window_observations(target, frames=True)
                 self.audit("foreground_dispatch_prepared", target_id=token, action=args["action"],
                            text_length=len(args.get("text", "")), key_count=len(args.get("keys", [])))
-            return {**foreground.act(target, frame["size"], args, begin), "target_id": token}
+            return {**foreground.act(target, frame["size"], args, begin, check_running=self.coordinator.ensure_running), "target_id": token}
         if name == "launch_app":
             if not self.allow_app_launch:
                 raise w.PilotError("ADMIN_EXECUTOR_REQUIRED: unavailable in ordinary direct stdio; no per-call UAC")
