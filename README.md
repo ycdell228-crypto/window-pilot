@@ -1,126 +1,107 @@
 # Window Pilot
 
-面向 DSH、Codex 等宿主的 Windows 窗口自动化 MCP：提供指定程序启动、窗口枚举与精确绑定、窗口客户区截图、UIA 控件读取与操作、定向后台鼠标操作，以及显式授权的前台快捷键、Unicode 文字和拖拽。宿主在用户任务授权内观察、决定操作并确认实际效果。
+让 Codex、DSH 等 MCP 客户端观察和操作指定的 Windows 窗口。
 
-**本机试用版本，采用 [MIT 许可证](LICENSE)。**
+Window Pilot 提供窗口截图、控件与文字读取、后台点击和有限的后台文字输入，也支持独立授权的前台操作。模型通过 MCP 选择目标窗口、读取状态、执行动作，再观察结果，组成可核实的桌面操作流程。
 
-[安装与最短接入 / Quick start](docs/INSTALL.md) · [管理员信任边界](#边界) · [启动限制](docs/LAUNCH_POLICY.md) · [证据保留策略](docs/RETENTION.md)
+[快速开始](#快速开始) · [Codex 接入](docs/CODEX.md) · [DSH 接入](docs/DSH.md) · [能力范围](docs/BACKGROUND-INPUT-REVIEW.md) · [版本发布](https://github.com/ycdell228-crypto/window-pilot/releases)
 
-| 模式 | 接入路径 |
-|---|---|
-| 普通权限 | DSH / Codex → stdio → 普通权限窗口服务 |
-| 管理员 | DSH / Codex → 普通权限bridge → 同用户同会话管道 → 预授权管理员执行端 |
+## 能做什么
 
-管理员管道接受可访问的同账户同会话进程；图中的宿主不是唯一能调用它的程序。普通stdio可通过本地wheel隔离安装；管理员模式须另外审查安装。
+| 能力 | 说明 |
+| --- | --- |
+| 选择目标窗口 | 枚举窗口、发现关联对话框，按窗口与进程身份精确绑定 |
+| 观察窗口状态 | 获取客户区截图、UIA 控件树，以及有长度限制的值、正文和选区信息 |
+| 后台鼠标操作 | 向目标窗口发送左键、右键、双击及横向、纵向滚动消息 |
+| 标准输入框文字操作 | 对标准 Win32 Edit 替换整值、清空，或在观察到的光标与选区处插入文字 |
+| 前台交互 | 独立授权后激活窗口、点击、输入文字、使用快捷键和拖拽 |
+| 协调与停止 | 同一执行端内共享窗口操作权，跨连接停止输入，并为未知结果提供恢复流程 |
+| 启动程序 | 管理员模式下启动用户指定的本地程序，可配置启动开关与路径白名单 |
 
-## 当前后台能力（2026-11-09）
+截图限定在绑定窗口的客户区。后台输入会拒绝正在前台的目标、同进程窗口及同窗口族。每次输入使用新鲜的单次观察，动作后需要重新读取并确认效果。
 
-统一观察、有界文字、关联窗口发现和同执行端跨连接停止已验收。标准 Win32 Edit 支持 `WM_SETTEXT` 整值替换/清空，以及 `EM_REPLACESEL` 按观察到的选区插入文字。后台点击与滚动使用 `PostMessageW`。`press_key` 和后台拖拽当前派发前拒绝，WPF 与不合格 Win32 UIA SetValue 继续拒绝。
+## 快速开始
 
-后台输入拒绝目标、同进程或同窗口族正在前台的情况，保留身份、几何、30秒单次观察、协调和未知结果停输保护。前台模式需独立明确选择。自有 fixture 的有限证据尚未证明真实应用普遍兼容或连续无干扰，清空测试期间一次鼠标位置变化来源未知。独立无头浏览器适配器已验收，MCP 接入仍待后续实施。
+需要 **交互式 Windows 10/11** 和 **Python 3.12+**。
 
-当前范围、证据和发布基准见[后台版本说明](docs/RELEASE-BACKGROUND-2026-11-09.md)与[整体验收清单](docs/BACKGROUND-INPUT-REVIEW.md)。下列三项优化和10月30日交付保留各自历史验证范围。
+### 1. 获取源码并安装
 
-## 三项优化
-
-- **公共说明更精简**：实际 MCP 初始化说明从 5555 减至 2102 字符，保留授权、观察和未知结果边界；这不是 token 计数或真实模型请求的节省比例。DSH 当前适配器把公共说明独立注册，不能按 13 项工具重复相乘。详见[说明精简与宿主边界](docs/OPTIMIZATION-1-TEXT.md)。
-- **恢复步骤更集中**：`window_control(operation="prepare_recovery")` 获取操作权并准备新证据和后续调用建议。宿主审查效果后显式恢复，再新观察才能操作；准备不会自动清故障或重放输入。详见[恢复流程](docs/COORDINATION.md)。
-- **外部输入时及时让路**：明确前台动作期间监听外部键鼠事件，检测后停止后续输入，并按精确左右键处理工具持有输入的释放与外部同键持有。不会吞事件、阻止人工输入或抢回焦点；同桌面仍有竞态。详见[前台输入与外部干预](docs/FOREGROUND.md)。
-
-三项已逐项验收；验证范围与未覆盖项见[优化汇总](docs/OPTIMIZATION-SUMMARY-2026-10-29.md)。源码发布不代表你的本机服务已部署或重连。
-
-## 本轮改进
-
-新增可配置的截图/审计保留、可选程序启动开关和exe白名单，以及包含运行资源的wheel构建与pipx安装路径。管理员信任边界和调用方自述授权见下文，具体交付、历史失败与未验范围见[10月30日交付报告](docs/REVIEW-FIXES-2026-10-30.md)。这些后续main改动不改变v0.1.0标签的冻结源码。
-
-## 工具
-
-| 工具 | 用途 |
-|---|---|
-| get_window_state | 按需合并客户区截图、UIA树、有界值/正文/选区和关联窗口元数据，注明非原子 |
-| input_control | 同执行端跨连接停止、状态与明确恢复，旧观察失效，未知故障保留 |
-| health | 后端、绑定范围、故障摘要和自有测试窗口状态 |
-| list_windows | 枚举应用顶层窗口；可按绑定目标的 Win32 owner 链发现关联窗口 |
-| bind_window / unbind_window | 绑定精确 HWND/PID/创建时间/路径/线程/窗口类及访问范围，或撤销 token |
-| observe | 从绑定窗口自身捕获客户区，保存原图哈希并返回有界图片预览 |
-| observe_controls | 只读 UIA 控件树：名称、类型、状态、层级、位置、支持模式及焦点标志；观察级控件 ID |
-| window_control | 同一执行端内获取、续期、释放窗口操作权，查询状态；prepare_recovery 准备证据与恢复建议，recover 显式恢复 |
-| control_action | 独立授权范围内按观察级 ID 执行一次控件动作；标准 Edit 可整值替换或插入文字，press_key 当前明确拒绝，随后重新观察 |
-| click | 新鲜单次帧定向鼠标消息：默认左键一次；独立observe_and_mouse授权可右键、左键双击、双轴滚轮 |
-| foreground_action | 独立前台授权下的真实激活/点击、快捷键、Unicode文字和有界拖拽；外部输入时停止后续输入 |
-| launch_app | 在已授权管理员执行端启动用户点名的本地 .exe，返回启动回执 |
-| launch_test / close_test | 仅启动/关闭项目自己的测试窗口 |
-
-共15项工具。控件观察见 [UIA](docs/UIA.md)，观察级控件操作和明确的权限/焦点边界见 [UIA_ACTIONS](docs/UIA_ACTIONS.md)。旧游戏专用启动、日志监测、完成记录、串行关闭和 WW 专用代理已删除，不再有 click_helper。launch_app 为通用启动接口，默认不要求应用登记，操作方可另行配置启动开关和精确路径白名单；插件不提供游戏流程或日常调度。
-
-右键、左键双击和上下左右滚轮的有界参数、子窗口路径、屏幕坐标与部分派发处理见 [MOUSE_ACTIONS](docs/MOUSE_ACTIONS.md)。原左键权限与默认调用保持兼容。
-
-UIA提供方可能自行激活窗口；本机自有fixture已观测到操作期间目标成为前台。工具不调用SetFocus或前台回退，但不能承诺UIA操作全程留在后台，结果会报告桌面采样。
-
-明确前台输入的授权、桌面门禁、焦点/保护检查和释放规则见 [FOREGROUND](docs/FOREGROUND.md)。自有fixture原生8项已通过，主对话已按WP-NEXT-005审查接受，本项与完成报告一并本地存档，提交可由决策记录历史核对。
-
-## 管理员常驻模式
-
-支持“普通权限调用宿主/stdio 桥 → 同用户同会话命名管道 → 管理员常驻执行端”，共15项工具。由用户审查文件后单独执行一次安装UAC，通过交互式最高权限登录任务自启；不提升调用宿主、不恢复旧日常计划、不在每次点击或启动程序时提权。实际权限以 health.executor 为准。
-
-安装预览、实际修改命令、停止/禁用/卸载与回退见 [ADMIN_SERVICE](docs/ADMIN_SERVICE.md)。下载源码不会自动安装或更新本机服务。
-
-launch_app 接收本地绝对 exe 路径、字符串数组 args、可选 cwd（默认 exe 所在目录）、purpose 和唯一 request_id。普通直连 stdio 模式拒绝启动，不临时请求 UAC。参数通过 shell=False 传递；所选程序及其参数在管理员权限下执行，这不是执行沙箱，也不阻止用户明确要求的解释器程序。应用可能自行激活窗口，PID 或退出码不能证明应用已就绪。完整调用与重连步骤见 [DSH](docs/DSH.md)。
-
-## 最短流程
-
-操作方可用app_launch.enabled关闭程序启动，或配置精确exe路径白名单；缺省行为保持兼容，详见[启动限制](docs/LAUNCH_POLICY.md)。这些限制不构成人工批准或同账户恶意代码隔离。
-
-```text
-list_windows()
-bind_window(hwnd=H, access="observe_and_click", purpose="用户本次任务", capture_backend="wgc")
-window_control(target_id=T, operation="acquire", lease_seconds=60)
-observe(target_id=T)
-click(target_id=T, frame_id=F, x=X, y=Y)
-observe(target_id=T)
-window_control(target_id=T, operation="release")
-unbind_window(target_id=T)
-```
-
-绑定默认只读；显式 observe_and_click 和 purpose 授权这一个窗口、这次服务会话，无需终端逐次批准。绑定须使用60秒内列出的身份，新 PID/替换窗口需重新选择，不从窗口内容推断授权。准确参数见 [GENERIC_WINDOWS](docs/GENERIC_WINDOWS.md)。
-
-## 运行与宿主接入
-
-需要交互式 Windows 10/11、Python 3.12+。基础 PrintWindow 无第三方依赖；WGC 需要 PyWinRT，较大图像预览需要 Pillow。通用配置只需：
-
-```json
-{"window_control":{"capture_backend":"wgc"}}
-```
+在 PowerShell 中运行以下命令。
 
 ```powershell
-if (-not (Test-Path config.local.json)) { Copy-Item config.example.json config.local.json }
-python -m pip install --target .local/wgc-deps --upgrade --only-binary :all: -r requirements-wgc.txt
-.\scripts\run.ps1 -Python 'C:\path\to\python.exe'
+git clone https://github.com/ycdell228-crypto/window-pilot.git
+cd window-pilot
+.\scripts\build-wheel.ps1 -Python python
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --no-index .\dist\window_pilot-0.1.0-py3-none-any.whl
 ```
 
-run.ps1 是 stdio MCP，应由客户端托管。Codex 的禁用状态配置预览、普通/bridge 模式、接入与回退见 [CODEX](docs/CODEX.md)；预览脚本不修改宿主配置或启动服务。
+pipx 安装、可选依赖和卸载步骤见[安装指南](docs/INSTALL.md)。
 
-DSH 推荐使用原生插件包，让“已安装插件”显示 **Window Pilot** 名称、中文简介和启用/禁用入口：先运行 `scripts/install-dsh-plugin.ps1 -Python <路径>` 预览，再显式加 `-Apply` 安装；完整说明及普通/管理员模式见 [DSH](docs/DSH.md)。旧 register-dsh.ps1 只提供通用 MCP 接入，没有独立卡片；不要与原生包重复插入。旧配置中的游戏字段不再读取。管理员服务检测到 Python 源码或服务清单变更会自行停止；需要时启动现有已授权任务，再重连插件加载新版。
+### 2. 准备配置
 
-两种宿主复用相同的15项工具、初始化说明和标准 MCP text/image 内容，不需要 DSH 专属图片格式。普通直连同一配置目录只允许一个服务；管理员模式每条连接各有 token/帧，同一执行端共享持续窗口操作权、观察版本和未知故障门禁，调用方须先获取操作权再新观察；不同窗口可并行。独立执行端之间及人工输入不在此协调域，详见 [COORDINATION](docs/COORDINATION.md)。48 KB 预览上限继续保留。
+将以下内容保存为自己的配置文件，例如 `C:\path\to\pilot-data\config.json`。此配置使用 PrintWindow 截图，并关闭程序启动。
 
-## 边界
+```json
+{
+  "window_control": {"capture_backend": "printwindow"},
+  "app_launch": {"enabled": false}
+}
+```
 
-- **管理员模式信任同一账户、同一交互会话中能够访问管道的进程。** 服务端检查连接进程的SID/session，不验证它是否为DSH、Codex或特定客户端路径，也不要求客户端已提升权限。服务运行时，这些进程可以直接请求管理员窗口操作及启用的程序启动能力；不是只有模型宿主能调用。首次UAC安装是在预授权这个常驻管理员代理，不能将它当作防御同账户恶意代码的隔离层。
-- **purpose是调用方提供的任务说明，不是人工批准凭证。** 工具访问范围、精确身份、新鲜观察和单次消费由服务检查；“用户是否同意本次任务”依赖宿主落实。服务没有带外人工批准环，也不会因一段purpose文本证明人已确认。shell=False避免隐式shell解析，不限制显式选择的解释器或程序本身的管理员能力。
-- 默认 WGC，可通过配置的 window_control 字段、绑定或单帧 observe 显式选择 wgc/printwindow。只从指定 HWND 自身捕获，失败直接报错；没有自动换后端、整屏/区域截图或前台回退。
-- 被其他窗口遮挡仍可捕获目标自身内容；锁屏、隐藏/最小化、受保护内容或所有程序兼容性无保证，不自动还原。
-- 原始 width/height、sha256 对应原生客户区 PNG。MCP 大图有界预览不超过48 KB；按 image_to_client_scale 换算坐标，不能用模糊文字猜按钮。
-- 鼠标动作按授权向目标的同进程子窗口投递按钮/滚轮消息；仅对严格核验的 Static/WebView2 嵌入链允许跨进程接收，具体边界与审计见 [GENERIC_WINDOWS](docs/GENERIC_WINDOWS.md#嵌入-webview2-窗口)。目标、同进程或同窗口族正在前台时拒绝后台输入；后台click使用局部PostMessage，前台输入须另行显式授权。应用仍可能自行激活，不能替它作绝对保证。
-- 高于实际执行端或无法核实权限时不发送点击。管理员模式可处理与执行端同级的管理员窗口，但不会按调用启动 UAC、提升 DSH 或改变消息过滤；普通模式仍保留原权限限制。截图成功不意味着消息可以输入。
-- 普通鼠标和非目标前台变化只记诊断；身份、几何、边界、单次帧和部分派发仍严格检查。派发成功不等于效果，须新图确认；错误后停止该 token 输入，不自动重放或重新绑定抹掉错误。
+默认 WGC 截图与大图预览需要额外依赖，安装方法见[安装指南](docs/INSTALL.md)。
 
-## 状态与交付
+### 3. 接入 MCP 客户端
 
-GitHub Actions中的普通检查与交互桌面验收分开理解：默认CI主动跳过原生桌面输入，绿灯不证明键鼠、管理员IPC或真实宿主端到端输入通过。本机原生证据及历史失败的准确范围见 [VALIDATION](docs/VALIDATION.md)和[优化汇总](docs/OPTIMIZATION-SUMMARY-2026-10-29.md)；受控SendInput不等于人类硬件验证。
+由客户端托管以下 stdio 服务命令，使用自己的绝对路径。
 
-10月30日历史本地普通回归38项通过、0失败/错误，另10个原生跳过入口；独立wheel安装、pipx及自有窗口截图/49节点UIA读取通过。详见[本轮交付](docs/REVIEW-FIXES-2026-10-30.md)。10月29日三项优化的27项普通通过记录保留为历史；不能把不同轮次或跳过项相加冒称完整原生覆盖。真实宿主端到端输入、全部第三方/DPI/输入法兼容性及最终token收益仍未全面验证。
+```powershell
+.\.venv\Scripts\window-pilot.exe serve --config 'C:\path\to\pilot-data\config.json'
+```
 
-私有原图默认最多512张/256 MiB/30天，审计按8 MiB轮转并保留4份归档；配置、清理时机及旧文件处理见[保留策略](docs/RETENTION.md)。启动回执在 .local/app-launches/，不按此策略清理；审计与回执不保存启动参数原文。同一 request_id 不重复创建进程，回复丢失或结果未知时禁止自动换新 ID 重试；新的明确启动任务才用新 ID。截图、审计等本机媒体与回执不进入Git。
+- Codex 的配置、源码接入和重连步骤见[Codex 接入](docs/CODEX.md)。
+- DSH 的原生插件安装和连接方式见[DSH 接入](docs/DSH.md)。
+- 需要处理管理员窗口或启动程序时，按[管理员服务指南](docs/ADMIN_SERVICE.md)审阅并安装独立执行端。
 
-源码、测试、运行/注册/打包脚本保留在对应目录。`scripts/package.ps1` 仅生成本地源码包，排除私有数据，已有 ZIP 会拒绝覆盖；不创建远端、提交或发布 GitHub。参考源码出处见 [NOTICE](NOTICE.md)。
+## 典型操作流程
+
+选择窗口 → 绑定访问范围 → 获取操作权 → 观察 → 执行一次动作 → 重新观察结果 → 释放操作权并解绑。
+
+普通权限模式直接运行 stdio 服务。管理员模式通过普通权限 bridge 连接同用户、同会话的管理员执行端。实际权限与服务状态可通过 `health` 查询。
+
+<details>
+<summary>查看 15 项 MCP 工具</summary>
+
+| 工具 | 用途 |
+| --- | --- |
+| `health` | 查看执行端、权限和服务状态 |
+| `list_windows` | 枚举窗口及目标的关联窗口 |
+| `bind_window` / `unbind_window` | 绑定或解除一个目标窗口 |
+| `get_window_state` | 按需获取截图、控件树、文字和关联窗口信息 |
+| `observe` / `observe_controls` | 分别读取截图或控件树 |
+| `click` | 后台点击、双击与滚动 |
+| `control_action` | 控件操作及受支持的整值替换、文字插入 |
+| `foreground_action` | 显式前台鼠标与键盘操作 |
+| `window_control` | 获取、续期和释放操作权，准备与确认恢复 |
+| `input_control` | 停止输入、查询停止状态和明确恢复 |
+| `launch_app` | 启动用户指定的本地程序 |
+| `launch_test` / `close_test` | 启动或关闭项目自有测试窗口 |
+
+</details>
+
+## 使用范围与权限
+
+- **后台支持取决于应用和控件。** 标准 Win32 Edit 支持整值替换与选区插入。后台按键和拖拽目前拒绝执行，WPF 后台设值也拒绝执行。独立无头浏览器适配器处于实验阶段，尚未接入 MCP。具体支持项见[后台能力清单](docs/BACKGROUND-INPUT-REVIEW.md)。
+- **窗口操作需要验证实际效果。** UIA 提供方可能自行激活窗口，截图与控件读取也分开进行。当前验证覆盖自有测试窗口和有限场景，真实应用的普遍兼容性与连续无干扰仍待验证。结果未知或只执行了一部分时，应停止并检查新证据。验证范围见[后台版本说明](docs/RELEASE-BACKGROUND-2026-11-09.md)。
+- **管理员模式具有管理员权限。** 执行端信任能够访问管道的同账户、同会话进程，用户任务授权由调用客户端落实。`purpose` 用于描述任务。使用前请阅读[管理员信任与权限边界](docs/ADMIN_SERVICE.md)。
+- **截图与审计保存在本地。** 保留数量、容量和期限可配置，详情见[证据保留策略](docs/RETENTION.md)。
+
+## 文档与开发
+
+[安装指南](docs/INSTALL.md) · [窗口绑定](docs/GENERIC_WINDOWS.md) · [UIA 控件操作](docs/UIA_ACTIONS.md) · [鼠标操作](docs/MOUSE_ACTIONS.md) · [前台操作](docs/FOREGROUND.md) · [协调与恢复](docs/COORDINATION.md) · [输入停止](docs/INPUT-STOP.md)
+
+开发约定见 [AGENTS.md](AGENTS.md)，设计演进见[决策记录](docs/decisions-dsh-codex.md)。GitHub Actions 执行普通回归和 wheel 安装验证，原生桌面输入的证据与范围见[验证记录](docs/VALIDATION.md)。
+
+## 许可证
+
+采用 [MIT License](LICENSE)。参考项目与第三方归属见 [NOTICE](NOTICE.md)。
