@@ -81,9 +81,10 @@ TOOLS = [
     ("observe_controls", "Read-only bounded UIA control-view tree of the exact bound window, same-process providers only. Names/types/state/physical bounds/supported patterns/focus flags; no values, input, focus, global focused-element lookup or desktop fallback. IDs are scoped to this observation, never reusable bare numbers. Optional fresh frame_id links a separate screenshot, not an atomic snapshot. Empty/unavailable/unsupported/timeout are explicit.",
      schema({"target_id": STR, "frame_id": STR, "max_nodes": {"type": "integer", "minimum": 1, "maximum": 128},
              "max_depth": {"type": "integer", "minimum": 0, "maximum": 8}}, ["target_id"])),
-    ("control_action", "One exact action on a fresh single-use observation control_id: UIA invoke/set_value/select/expand/collapse/scroll; type_text uses only Win32 Edit EM_REPLACESEL at the observed caret/selection, requiring get_window_state with include_text=true. set_value replaces the whole value; type_text does not. Other editors/keys/drag are not provided by this action. Inspect node.background_actions: refused means no dispatch; unverified is NOT background safety approval. WPF set_value is refused. Requires observe_and_control + human-task purpose; rechecks window/process/runtime/tree/state/geometry. No SetFocus, global input, password input, frontend fallback or retries. Return is effect=unverified; reobserve actual effect. Value is not audited in plaintext.",
+    ("control_action", "One exact action on a fresh single-use observation control_id: UIA invoke/set_value/select/expand/collapse/scroll; type_text uses only Win32 Edit EM_REPLACESEL at the observed caret/selection, requiring get_window_state with include_text=true. set_value replaces the whole value; type_text does not. press_key accepts keys as a distinct request but currently ALWAYS rejects BACKGROUND_KEY_BACKEND_UNAVAILABLE with not_sent; no Windows background keys are certified, no SendInput/PostMessage/text substitution or foreground fallback. Drag is not provided here. Inspect node.background_actions: refused means no dispatch; unverified is NOT background safety approval. WPF set_value is refused. Requires observe_and_control + human-task purpose; rechecks window/process/runtime/tree/state/geometry. No SetFocus, global input, password input, fallback or retries. Reobserve actual effects. Value/key contents are not audited.",
      schema({"target_id": STR, "observation_id": STR, "control_id": STR,
-             "action": {"type": "string", "enum": ["invoke", "set_value", "type_text", "select", "expand", "collapse", "scroll"]},
+             "action": {"type": "string", "enum": ["invoke", "set_value", "type_text", "press_key", "select", "expand", "collapse", "scroll"]},
+             "keys": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4},
              "value": {"type": "string", "maxLength": 2048}, "horizontal": SCROLL_AMOUNT, "vertical": SCROLL_AMOUNT},
             ["target_id", "observation_id", "control_id", "action"])),
     ("click", "Direct mouse message action using a fresh single-use frame. Default left_click preserves observe_and_click scope; right_click/left_double_click/scroll require observe_and_mouse + purpose. Double-click requires receiver CS_DBLCLKS, no two-single fallback. Scroll uses the verified point-hit child, screen coordinates, signed 120-unit steps: vertical +up/-down, horizontal +right/-left, -10..10 nonzero. No real mouse, activation, global input or fallback. Reobserve effect; partial/unknown input must never replay.",
@@ -331,9 +332,11 @@ class Service:
         audit_args = ({key: args[key] for key in ("exe", "cwd", "request_id", "purpose") if key in args}
                       | {"argument_count": len(args.get("args", []))}) if name == "launch_app" else args
         if name == "control_action":
-            audit_args = {key: value for key, value in args.items() if key != "value"}
+            audit_args = {key: value for key, value in args.items() if key not in ("value", "keys")}
             if "value" in args:
                 audit_args["value_length"] = len(args["value"])
+            if "keys" in args:
+                audit_args["key_count"] = len(args["keys"])
         if name == "foreground_action":
             audit_args = {key: value for key, value in args.items() if key not in ("keys", "text")}
             if "keys" in args: audit_args["key_count"] = len(args["keys"])
@@ -613,14 +616,16 @@ class Service:
                 raise w.PilotError("UIA_CONTROL_NOT_IN_OBSERVATION")
             self.coordinator.begin_input(self._input_ticket, target, observation.get("coordination"))
             tokens = self.invalidate_window_observations(target, frames=True)  # consume before worker, even if rejected
-            self.audit("control_dispatch_prepared", arguments={key: value for key, value in args.items() if key != "value"},
-                       value_length=len(args["value"]) if "value" in args else None)
+            self.audit("control_dispatch_prepared", arguments={key: value for key, value in args.items() if key not in ("value", "keys")},
+                       value_length=len(args["value"]) if "value" in args else None,
+                       key_count=len(args["keys"]) if "keys" in args else None)
             result = uia.act(target, observation, candidates[0], args, check_running=self.coordinator.ensure_running)
             if result["status"] == "unknown":
                 for affected in tokens:
                     self.bindings[affected]["input_faulted"] = True
             return {**result, "target_id": token, "control_id": args["control_id"], "action": args["action"],
-                    "observation_consumed": True, "next": "observe_controls/observe and assess actual effect; never replay"}
+                    "observation_consumed": True, "next": ("no background key backend; no retry or automatic foreground fallback"
+                        if args["action"] == "press_key" else "observe_controls/observe and assess actual effect; never replay")}
         if name == "click":
             frame, target = self.fresh_frame(args["frame_id"], args["target_id"])
             binding = self.bindings[args["target_id"]]

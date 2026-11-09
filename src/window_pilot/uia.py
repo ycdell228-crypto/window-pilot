@@ -2,6 +2,7 @@
 from dataclasses import asdict
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -72,6 +73,7 @@ def observe(target, max_nodes=64, max_depth=5, timeout=6, *, include_text=False,
     for node in result["nodes"]:
         bounds = node["bounds_screen"]
         node["bounds_client"] = ({**bounds, "x": bounds["x"] - origin.x, "y": bounds["y"] - origin.y} if bounds else None)
+        node.setdefault("background_actions", {})["press_key"] = background_key_support()
     result.update(identity=asdict(target), started_at=started, finished_at=time.time(),
                   desktop_observation=w.click_desktop_diagnostic(desktop_before, w.desktop_state(), target.hwnd),
                   geometry={"x": origin.x, "y": origin.y, "width": size[0], "height": size[1]},
@@ -87,8 +89,14 @@ def observe(target, max_nodes=64, max_depth=5, timeout=6, *, include_text=False,
     return result
 
 
-ACTIONS = {"invoke", "set_value", "type_text", "select", "expand", "collapse", "scroll"}
+ACTIONS = {"invoke", "set_value", "type_text", "press_key", "select", "expand", "collapse", "scroll"}
 SCROLL_AMOUNTS = {"NoAmount", "SmallIncrement", "SmallDecrement", "LargeIncrement", "LargeDecrement"}
+
+
+def background_key_support():
+    return {"status": "refused", "reason": "BACKGROUND_KEY_BACKEND_UNAVAILABLE",
+            "execution_method": None, "background_safety_verified": False,
+            "supported_keys": [], "foreground_fallback": False}
 
 
 def validate_action(arguments):
@@ -100,6 +108,11 @@ def validate_action(arguments):
         value = arguments.get("value")
         if extras != {"value"} or not isinstance(value, str) or len(value) > 2048 or "\0" in value:
             raise w.PilotError("UIA_INVALID_VALUE: string up to 2048 characters, no NUL")
+    elif action == "press_key":
+        keys = arguments.get("keys")
+        if (extras != {"keys"} or not isinstance(keys, list) or not 1 <= len(keys) <= 4
+                or any(not isinstance(key, str) or re.fullmatch(r"[A-Z][A-Z0-9_]{0,31}", key) is None for key in keys)):
+            raise w.PilotError("INVALID_BACKGROUND_KEYS: 1..4 uppercase key names; no text/value parameters")
     elif action == "scroll":
         if extras - {"horizontal", "vertical"} or "value" in arguments:
             raise w.PilotError("UIA_INVALID_SCROLL")
@@ -142,6 +155,13 @@ def run_action_worker(command, payload, timeout, check_running):
 def act(target, observation, node, arguments, timeout=6, *, check_running=None):
     """One provider call. Any uncertain outcome must stop input; never retry."""
     validate_action(arguments)
+    if arguments["action"] == "press_key":
+        # No Windows background keyboard backend has passed validation. Do not launch a
+        # provider, post keyboard messages, edit text, or call the foreground executor.
+        return {"status": "rejected", "action_attempted": False, "effect": "not_sent",
+                "error": "BACKGROUND_KEY_BACKEND_UNAVAILABLE", "execution_method": None,
+                "key_count": len(arguments["keys"]), "foreground_fallback": False,
+                "desktop_observation": {"sampled": False, "reason": "no_input_dispatch"}}
     w.bindable(target)
     w.require_background_target(target)
     if w.input_access(target)["blocked_by_integrity"]:

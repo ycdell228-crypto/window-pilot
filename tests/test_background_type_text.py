@@ -16,7 +16,7 @@ class TypeTextContracts(unittest.TestCase):
         uia.validate_action({"action": "type_text", "value": "insert"})
         for args in ({"action": "type_text"}, {"action": "type_text", "value": "x\0y"},
                      {"action": "type_text", "value": "x", "keys": ["ENTER"]},
-                     {"action": "press_key", "keys": ["ENTER"]}):
+                     {"action": "press_key", "value": "ENTER"}):
             with self.assertRaises(w.PilotError):
                 uia.validate_action(args)
 
