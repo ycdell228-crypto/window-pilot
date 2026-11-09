@@ -32,6 +32,8 @@ public static class UiaReadDpi {
     public static extern IntPtr ReadSelection(IntPtr hwnd, uint message, ref uint start, ref uint end, uint flags, uint timeout, out UIntPtr result);
     [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW", CharSet=CharSet.Unicode, SetLastError=true)]
     public static extern IntPtr ReplaceSelection(IntPtr hwnd, uint message, UIntPtr undo, string text, uint flags, uint timeout, out UIntPtr result);
+    [DllImport("user32.dll", EntryPoint="SendMessageTimeoutW", CharSet=CharSet.Unicode, SetLastError=true)]
+    public static extern IntPtr SetText(IntPtr hwnd, uint message, UIntPtr unused, string text, uint flags, uint timeout, out UIntPtr result);
     [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left, Top, Right, Bottom; }
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
@@ -86,10 +88,12 @@ public sealed class SelectionRead {
         elseif (-not $patternName -or $node.supported_patterns -notcontains ($patternName + 'PatternIdentifiers.Pattern')) { $reason = 'UIA_PATTERN_UNSUPPORTED' }
         elseif ($action -eq 'set_value' -and $node.pattern_state.value_read_only) { $reason = 'UIA_VALUE_READ_ONLY' }
         elseif ($action -eq 'set_value' -and $node.framework_id -eq 'WPF') { $reason = 'UIA_BACKGROUND_WPF_SET_VALUE_REFUSED' }
-        elseif ($action -eq 'set_value' -and $node.framework_id -eq 'Win32') { $reason = 'UIA_BACKGROUND_WIN32_SET_VALUE_REFUSED' }
+        elseif ($action -eq 'set_value' -and $node.framework_id -eq 'Win32' -and $node.native_edit.status -ne 'ok') { $reason = 'UIA_BACKGROUND_WIN32_SET_VALUE_REFUSED' }
         elseif ($action -eq 'type_text' -and $node.native_edit.status -ne 'ok') { $reason = 'UIA_BACKGROUND_TYPE_TEXT_UNSUPPORTED' }
         return @{ status = $(if ($reason) { 'refused' } else { 'unverified' }); reason = $reason
-                  execution_method = $(if ($action -eq 'type_text') { 'Win32.EM_REPLACESEL' } else { 'UIA.' + $patternName + 'Pattern' }); background_safety_verified = $false }
+                  execution_method = $(if ($action -eq 'type_text') { 'Win32.EM_REPLACESEL' }
+                    elseif ($action -eq 'set_value' -and $node.native_edit.status -eq 'ok') { 'Win32.WM_SETTEXT' }
+                    else { 'UIA.' + $patternName + 'Pattern' }); background_safety_verified = $false }
     }
     function NativeEditInfo($element, $handle) {
         $native = [IntPtr]([long]$handle)
@@ -368,7 +372,7 @@ public sealed class SelectionRead {
             $ancestorNode = $nodes[[int]$ancestorNode.parent_index]
         }
         $stage = 'dispatch'
-        if ($request.action -eq 'type_text') {
+        if ($request.action -eq 'type_text' -or $support.execution_method -eq 'Win32.WM_SETTEXT') {
             $latestEdit = NativeEditInfo $element $selected.native_window_handle
             if (($latestEdit | ConvertTo-Json -Compress) -cne ($selected.native_edit | ConvertTo-Json -Compress)) { throw 'UIA_EDIT_STATE_CHANGED' }
             if (-not $latestEdit.multiline -and ([string]$request.value -match '[\r\n]')) { throw 'UIA_EDIT_MULTILINE_REQUIRED' }
@@ -377,7 +381,14 @@ public sealed class SelectionRead {
         $attempted = $true
         switch ([string]$request.action) {
             'invoke' { $pattern.Invoke() }
-            'set_value' { $pattern.SetValue([string]$request.value) }
+            'set_value' {
+                if ($support.execution_method -eq 'Win32.WM_SETTEXT') {
+                    [UIntPtr]$nativeResult = [UIntPtr]::Zero
+                    if ([UiaReadDpi]::SetText([IntPtr]([long]$selected.native_window_handle), 0xC,
+                        [UIntPtr]::Zero, [string]$request.value, 0x23, 500, [ref]$nativeResult) -eq [IntPtr]::Zero -or
+                        $nativeResult.ToUInt64() -eq 0) { throw 'UIA_EDIT_DISPATCH_UNKNOWN' }
+                } else { $pattern.SetValue([string]$request.value) }
+            }
             'type_text' {
                 [UIntPtr]$nativeResult = [UIntPtr]::Zero
                 if ([UiaReadDpi]::ReplaceSelection([IntPtr]([long]$selected.native_window_handle), 0xC2,
