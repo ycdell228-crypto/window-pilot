@@ -561,20 +561,37 @@ def post(hwnd, msg, wp=0, lp=0):
     check(U.PostMessageW(hwnd, msg, wp, lp), "PostMessage (UIPI may block a higher-integrity target)")
 
 
-def click(target, size, x, y, before_dispatch=None, *, action="left_click", axis=None, steps=None, check_running=None):
+def background_mouse_support():
+    support = {action: {"status": "unverified", "execution_method": "PostMessageW",
+                        "required_access": "observe_and_click or observe_and_mouse" if action == "left_click" else "observe_and_mouse"}
+               for action in ("left_click", "right_click", "left_double_click", "scroll")}
+    support["drag"] = {"status": "refused", "execution_method": None,
+                       "reason": "BACKGROUND_DRAG_BACKEND_UNAVAILABLE", "foreground_fallback": False}
+    return support
+
+
+def click(target, size, x, y, before_dispatch=None, *, action="left_click", axis=None, steps=None, check_running=None, end_x=None, end_y=None):
     evidence = {"bound_window": asdict(target), "root_point": [x, y], "route": [],
                 "down_posted": False, "up_posted": False, "effect": "unverified",
                 "action": action, "messages": []}
     try:
-        return _click(target, size, x, y, evidence, before_dispatch, action, axis, steps, check_running)
+        return _click(target, size, x, y, evidence, before_dispatch, action, axis, steps, check_running, end_x, end_y)
     except Exception as exc:
         exc.click_evidence = evidence
         raise
 
 
-def _click(target, size, x, y, evidence, before_dispatch, action="left_click", axis=None, steps=None, check_running=None):
-    if action not in {"left_click", "right_click", "left_double_click", "scroll"}:
+def _click(target, size, x, y, evidence, before_dispatch, action="left_click", axis=None, steps=None, check_running=None, end_x=None, end_y=None):
+    if action not in {"left_click", "right_click", "left_double_click", "scroll", "drag"}:
         raise PilotError("INVALID_MOUSE_ACTION")
+    if action == "drag":
+        if (axis is not None or steps is not None or
+                any(type(value) is not int for value in (x, y, end_x, end_y)) or
+                not (0 <= x < size[0] and 0 <= end_x < size[0] and 0 <= y < size[1] and 0 <= end_y < size[1])):
+            raise PilotError("INVALID_DRAG_PARAMETERS: start/end must be client-image points; no axis/steps")
+        raise PilotError("BACKGROUND_DRAG_BACKEND_UNAVAILABLE: input_sent=false; no mouse capture or foreground fallback")
+    if end_x is not None or end_y is not None:
+        raise PilotError("UNEXPECTED_DRAG_PARAMETERS")
     if action == "scroll":
         axis = axis or "vertical"
         if axis not in ("vertical", "horizontal") or type(steps) is not int or not -10 <= steps <= 10 or steps == 0:

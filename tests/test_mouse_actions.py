@@ -103,6 +103,8 @@ class MouseNativeTests(unittest.TestCase):
                  ({"action": "scroll", "axis": "horizontal", "steps": -2}, {"horizontal": -120})]
         for index, (parameters, expected) in enumerate(plans, 1):
             result = self.click(frame, **parameters)
+            self.assertFalse(result["desktop_observation"]["target_was_foreground"])
+            self.assertFalse(result["desktop_observation"]["target_is_foreground_after"])
             self.assertEqual(result["effect"], "unverified")
             updated = self.observe(f"{index:02}-after")
             actual = self.state()
@@ -129,6 +131,23 @@ class MouseNativeTests(unittest.TestCase):
                                   "new_image_confirmed": True, "dispatch_evidence": result["click_evidence"]})
             frame = updated
         self.assertFalse(self.service.faulted)
+
+    def test_background_drag_is_refused_without_receiver_changes(self):
+        from window_pilot import foreground
+        frame = self.observe("drag-before")
+        self.assertEqual(frame["background_mouse_actions"]["drag"]["status"], "refused")
+        before = self.state()
+        with patch.object(w, "post", side_effect=AssertionError("drag must not post messages")), \
+             patch.object(foreground, "act", side_effect=AssertionError("no foreground drag fallback")):
+            with self.assertRaisesRegex(w.PilotError, "BACKGROUND_DRAG_BACKEND_UNAVAILABLE.*input_sent=false") as refused:
+                self.click(frame, action="drag", end_x=330, end_y=130)
+        self.assertEqual(refused.exception.click_evidence["messages"], [])
+        self.assertEqual(refused.exception.recovery_diagnostic["attempt_input"], "not_sent")
+        self.assertFalse(self.service.faulted)
+        self.assertEqual(self.state(), before)
+        self.assertNotIn(frame["frame_id"], self.service.frames)
+        self.observe("drag-after")
+        self.evidence.append({"drag_refused": True, "receiver_unchanged": True, "input_sent": False})
 
     def test_partial_double_preserves_three_sent_messages_and_no_replay(self):
         frame = self.observe()
@@ -218,3 +237,23 @@ class MouseNativeTests(unittest.TestCase):
         self.assertTrue(self.service.faulted)
         self.evidence.append({"controlled_failure": "1ms double interval plus delayed first release",
                               "receiver_state": actual, "dispatch_evidence": failed.exception.click_evidence, "no_fallback": True})
+
+
+@unittest.skipUnless(sys.platform == "win32", "requires Windows")
+class BackgroundMouseContracts(unittest.TestCase):
+    def test_drag_refuses_before_any_native_input(self):
+        from window_pilot import foreground
+        target = w.Identity(1, 2, 3, "never-opened.exe", 4, "Fixture")
+        with patch.object(w.U, "PostMessageW", side_effect=AssertionError("no messages")), \
+             patch.object(w.U, "SendInput", side_effect=AssertionError("no real mouse")), \
+             patch.object(w.U, "SetCursorPos", side_effect=AssertionError("no cursor movement")), \
+             patch.object(w.U, "SetCapture", side_effect=AssertionError("no mouse capture")), \
+             patch.object(foreground, "act", side_effect=AssertionError("no foreground fallback")):
+            with self.assertRaisesRegex(w.PilotError, "BACKGROUND_DRAG_BACKEND_UNAVAILABLE") as refused:
+                w.click(target, (100, 100), 10, 10, action="drag", end_x=20, end_y=20)
+            self.assertEqual(refused.exception.click_evidence["messages"], [])
+            for parameters in ({"action": "drag"}, {"action": "drag", "end_x": -1, "end_y": 20}):
+                with self.assertRaisesRegex(w.PilotError, "INVALID_DRAG_PARAMETERS"):
+                    w.click(target, (100, 100), 10, 10, **parameters)
+            with self.assertRaisesRegex(w.PilotError, "UNEXPECTED_DRAG_PARAMETERS"):
+                w.click(target, (100, 100), 10, 10, end_x=20, end_y=20)

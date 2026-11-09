@@ -87,9 +87,10 @@ TOOLS = [
              "keys": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4},
              "value": {"type": "string", "maxLength": 2048}, "horizontal": SCROLL_AMOUNT, "vertical": SCROLL_AMOUNT},
             ["target_id", "observation_id", "control_id", "action"])),
-    ("click", "Direct mouse message action using a fresh single-use frame. Default left_click preserves observe_and_click scope; right_click/left_double_click/scroll require observe_and_mouse + purpose. Double-click requires receiver CS_DBLCLKS, no two-single fallback. Scroll uses the verified point-hit child, screen coordinates, signed 120-unit steps: vertical +up/-down, horizontal +right/-left, -10..10 nonzero. No real mouse, activation, global input or fallback. Reobserve effect; partial/unknown input must never replay.",
+    ("click", "Direct mouse message action using a fresh single-use frame. Default left_click preserves observe_and_click scope; right_click/left_double_click/scroll require observe_and_mouse + purpose. Double-click requires receiver CS_DBLCLKS, no two-single fallback. Scroll uses the verified point-hit child, screen coordinates, signed 120-unit steps: vertical +up/-down, horizontal +right/-left, -10..10 nonzero. drag requires start/end coordinates and observe_and_mouse but currently ALWAYS refuses BACKGROUND_DRAG_BACKEND_UNAVAILABLE before messages; never substitute foreground drag. No real mouse, activation, global input or fallback. Reobserve effect; partial/unknown input must never replay.",
      schema({"target_id": STR, "frame_id": STR, "x": INT, "y": INT,
-             "action": {"type": "string", "enum": ["left_click", "right_click", "left_double_click", "scroll"], "default": "left_click"},
+             "action": {"type": "string", "enum": ["left_click", "right_click", "left_double_click", "scroll", "drag"], "default": "left_click"},
+             "end_x": INT, "end_y": INT,
              "axis": {"type": "string", "enum": ["vertical", "horizontal"]},
              "steps": {"type": "integer", "minimum": -10, "maximum": 10}}, ["target_id", "frame_id", "x", "y"])),
     ("foreground_action", "Explicit real foreground activation/click/keys/Unicode text/bounded drag. Requires observe_and_foreground + purpose, window ownership and fresh single-use frame. Checks identity/geometry/foreground/safe UIA focus; password/unverified focus and held input refuse. Action-scoped marked injection and pass-through hooks stop on external input, including during probe waits. Known external same-key holds are not released; monitor/cleanup failures reported. No desktop isolation or background fallback. Executor excludes competing input. Unknown/partial outcomes require explicit recovery, never replay. Text/keys redacted from audit.",
@@ -556,6 +557,7 @@ class Service:
                     "capture_backend": backend, "binding_input_faulted": binding["input_faulted"],
                     "previous_click": binding["last_click"], "effect_verification": "The calling host must assess this NEW image; transport success is not effect proof",
                     "desktop_observation": desktop,
+                    "background_mouse_actions": w.background_mouse_support(),
                     "image_mime_type": mime, "image_width": preview_size[0], "image_height": preview_size[1],
                     "image_coord_space": "preview_pixels", "image_to_client_scale": {"x": size[0] / preview_size[0], "y": size[1] / preview_size[1]},
                     "image": base64.b64encode(delivered).decode("ascii")}
@@ -650,7 +652,7 @@ class Service:
                              check_running=self.coordinator.ensure_running,
                              before_dispatch=lambda evidence: self.audit("click_dispatch_prepared",
                                  target_id=args["target_id"], frame_id=args["frame_id"], click_evidence=evidence),
-                             **{key: args[key] for key in ("action", "axis", "steps") if key in args})
+                             **{key: args[key] for key in ("action", "axis", "steps", "end_x", "end_y") if key in args})
             binding["last_click"] = {"action_frame_id": args["frame_id"], "finished_mono": time.monotonic(),
                                      "dispatch": result["dispatch"], "effect": "unverified",
                                      "click_evidence": result["click_evidence"]}
