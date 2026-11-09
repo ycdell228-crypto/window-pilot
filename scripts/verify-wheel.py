@@ -73,8 +73,14 @@ def main():
         try:
             rpc("initialize", {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "wheel-smoke", "version": "1"}})
             tools = rpc("tools/list", {})["tools"]
-            if len(tools) != 13:
-                raise RuntimeError("expected 13 installed tools")
+            expected_tools = {
+                "input_control", "get_window_state", "health", "window_control",
+                "list_windows", "bind_window", "unbind_window", "observe",
+                "observe_controls", "control_action", "click", "foreground_action",
+                "launch_app", "launch_test", "close_test",
+            }
+            if len(tools) != len(expected_tools) or {tool["name"] for tool in tools} != expected_tools:
+                raise RuntimeError("installed tools do not match the 15-tool public contract")
             rejected = rpc("tools/call", {"name": "launch_app", "arguments": {"exe": str(python), "purpose": "direct-mode refusal check", "request_id": "wheel-smoke-refusal"}})
             if not rejected.get("isError") or "ADMIN_EXECUTOR_REQUIRED" not in rejected["content"][0]["text"]:
                 raise RuntimeError("ordinary installed stdio did not reject launch")
