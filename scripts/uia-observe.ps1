@@ -69,6 +69,21 @@ public sealed class SelectionRead {
     $nodes = [Collections.Generic.List[object]]::new()
     $elements = @{}
     $state = @{ truncated = $false; foreign_process_subtrees_skipped = 0 }
+    $actionPatterns = @{ invoke = 'Invoke'; set_value = 'Value'; select = 'SelectionItem'
+                         expand = 'ExpandCollapse'; collapse = 'ExpandCollapse'; scroll = 'Scroll' }
+    function ActionSupport($node, $action) {
+        $patternName = $actionPatterns[$action]
+        $reason = $null
+        if (-not $node.state.enabled) { $reason = 'UIA_CONTROL_DISABLED' }
+        elseif ($node.state.password) { $reason = 'UIA_PASSWORD_CONTROL_REFUSED' }
+        elseif ($node.state.offscreen -or $null -eq $node.bounds_screen -or
+                $node.bounds_screen.width -le 0 -or $node.bounds_screen.height -le 0) { $reason = 'UIA_CONTROL_NOT_VISIBLE' }
+        elseif (-not $patternName -or $node.supported_patterns -notcontains ($patternName + 'PatternIdentifiers.Pattern')) { $reason = 'UIA_PATTERN_UNSUPPORTED' }
+        elseif ($action -eq 'set_value' -and $node.pattern_state.value_read_only) { $reason = 'UIA_VALUE_READ_ONLY' }
+        elseif ($action -eq 'set_value' -and $node.framework_id -eq 'WPF') { $reason = 'UIA_BACKGROUND_WPF_SET_VALUE_REFUSED' }
+        return @{ status = $(if ($reason) { 'refused' } else { 'unverified' }); reason = $reason
+                  execution_method = ('UIA.' + $patternName + 'Pattern'); background_safety_verified = $false }
+    }
     function LimitedText($value, $limit) {
         $value = [string]$value
         if ($value.Length -gt $limit) { return $value.Substring(0, $limit) }
@@ -123,6 +138,7 @@ public sealed class SelectionRead {
             name = $name; automation_id = (LimitedText $current.AutomationId 128)
             control_type = $current.ControlType.ProgrammaticName
             class_name = (LimitedText $current.ClassName 128)
+            framework_id = (LimitedText $current.FrameworkId 128)
             process_id = $current.ProcessId; native_window_handle = [long]$current.NativeWindowHandle
             state = @{ enabled = $current.IsEnabled; offscreen = $current.IsOffscreen
                        keyboard_focusable = $current.IsKeyboardFocusable; has_keyboard_focus = $current.HasKeyboardFocus
@@ -138,6 +154,10 @@ public sealed class SelectionRead {
         }
     }
     Visit $root $null 0
+    foreach ($node in $nodes) {
+        $node.background_actions = @{}
+        foreach ($action in $actionPatterns.Keys) { $node.background_actions[$action] = ActionSupport $node $action }
+    }
     Progress 'tree_read'
     if ($request.include_text -and $request.mode -ne 'action') {
         $textBudget = @{ remaining = [int]$request.max_total_text_length }
@@ -263,7 +283,7 @@ public sealed class SelectionRead {
             $bounds = $node.bounds_screen
             [ordered]@{ runtime_id = @($node.runtime_id); parent = $node.parent_index; depth = $node.depth
                 pid = $node.process_id; hwnd = $node.native_window_handle; type = $node.control_type
-                class = $node.class_name; automation_id = $node.automation_id; name_hash = $node.name_sha256
+                class = $node.class_name; framework = $node.framework_id; automation_id = $node.automation_id; name_hash = $node.name_sha256
                 enabled = $node.state.enabled; password = $node.state.password; offscreen = $node.state.offscreen
                 rect = @($bounds.x, $bounds.y, $bounds.width, $bounds.height)
                 patterns = @($node.supported_patterns | Sort-Object)
@@ -284,21 +304,16 @@ public sealed class SelectionRead {
         $selected = @($nodes | Where-Object { ($_.runtime_id -join ',') -eq $key })
         if ($selected.Count -ne 1) { throw 'UIA_AMBIGUOUS_RUNTIME_ID' }
         $selected = $selected[0]
-        if (-not $selected.state.enabled) { throw 'UIA_CONTROL_DISABLED' }
-        if ($selected.state.password) { throw 'UIA_PASSWORD_CONTROL_REFUSED' }
-        if ($selected.state.offscreen -or $null -eq $selected.bounds_screen -or
-            $selected.bounds_screen.width -le 0 -or $selected.bounds_screen.height -le 0) { throw 'UIA_CONTROL_NOT_VISIBLE' }
-        $mapping = @{ invoke = 'Invoke'; set_value = 'Value'; select = 'SelectionItem'
-                      expand = 'ExpandCollapse'; collapse = 'ExpandCollapse'; scroll = 'Scroll' }
-        $patternName = $mapping[[string]$request.action]
-        if (-not $patternName -or $selected.supported_patterns -notcontains ($patternName + 'PatternIdentifiers.Pattern')) { throw 'UIA_PATTERN_UNSUPPORTED' }
-        if ($request.action -eq 'set_value' -and $selected.pattern_state.value_read_only) { throw 'UIA_VALUE_READ_ONLY' }
+        $support = ActionSupport $selected ([string]$request.action)
+        if ($support.status -eq 'refused') { throw $support.reason }
+        $patternName = $actionPatterns[[string]$request.action]
         $patternType = [type]('System.Windows.Automation.' + $patternName + 'Pattern')
         $pattern = $element.GetCurrentPattern($patternType::Pattern)
         # Final same-element and root recheck immediately before the single provider call.
         CheckRoot
         if ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() / 1000.0 -ge $request.deadline_epoch) { throw 'UIA_STALE_OBSERVATION' }
         if (-not $element.Current.IsEnabled -or $element.Current.IsPassword -or $element.Current.ProcessId -ne $request.pid -or
+            $element.Current.FrameworkId -cne $selected.framework_id -or
             (($element.GetRuntimeId() -join ',') -cne $key)) { throw 'UIA_CONTROL_CHANGED' }
         $latestBounds = $element.Current.BoundingRectangle
         if ($latestBounds.X -ne $selected.bounds_screen.x -or $latestBounds.Y -ne $selected.bounds_screen.y -or
@@ -335,7 +350,7 @@ public sealed class SelectionRead {
     if ($request.mode -eq 'action') {
         # Provider messages may echo a SetValue input; never return/log them.
         $code = ($message -split ':', 2)[0]
-        $allowedCodes = @('UIA_BACKGROUND_TARGET_IN_USE', 'UIA_BACKGROUND_FOREGROUND_UNAVAILABLE',
+        $allowedCodes = @('UIA_BACKGROUND_WPF_SET_VALUE_REFUSED', 'UIA_BACKGROUND_TARGET_IN_USE', 'UIA_BACKGROUND_FOREGROUND_UNAVAILABLE',
             'UIA_ROOT_UNAVAILABLE', 'UIA_ROOT_IDENTITY_MISMATCH', 'UIA_AMBIGUOUS_RUNTIME_ID',
             'UIA_WINDOW_IDENTITY_CHANGED', 'UIA_WINDOW_GEOMETRY_CHANGED', 'UIA_STALE_OBSERVATION',
             'UIA_OBSERVATION_CHANGED', 'UIA_CONTROL_NOT_IN_OBSERVATION', 'UIA_CONTROL_DISABLED',
@@ -349,5 +364,9 @@ public sealed class SelectionRead {
         $result = @{ status = $status; nodes = @(); error_stage = $stage
                      error = 'UIA_OBSERVATION_FAILED' }
     }
+}
+if ($request.mode -eq 'action' -and $null -ne $support) {
+    $result.execution_method = $support.execution_method
+    $result.background_safety_verified = $false
 }
 [Console]::Out.WriteLine(($result | ConvertTo-Json -Depth 18 -Compress))

@@ -81,7 +81,7 @@ TOOLS = [
     ("observe_controls", "Read-only bounded UIA control-view tree of the exact bound window, same-process providers only. Names/types/state/physical bounds/supported patterns/focus flags; no values, input, focus, global focused-element lookup or desktop fallback. IDs are scoped to this observation, never reusable bare numbers. Optional fresh frame_id links a separate screenshot, not an atomic snapshot. Empty/unavailable/unsupported/timeout are explicit.",
      schema({"target_id": STR, "frame_id": STR, "max_nodes": {"type": "integer", "minimum": 1, "maximum": 128},
              "max_depth": {"type": "integer", "minimum": 0, "maximum": 8}}, ["target_id"])),
-    ("control_action", "One exact UIA pattern call (invoke/set_value/select/expand/collapse/scroll) on a fresh single-use observation control_id. Requires observe_and_control + human-task purpose; rechecks same window/process/runtime/tree/state/geometry. No SetFocus, global input, password input, frontend fallback or retries. Return is effect=unverified; new observation must confirm. Value is not audited in plaintext.",
+    ("control_action", "One exact UIA pattern call (invoke/set_value/select/expand/collapse/scroll) on a fresh single-use observation control_id. Inspect node.background_actions: refused means no dispatch; unverified is NOT background safety approval. WPF set_value is refused. Requires observe_and_control + human-task purpose; rechecks same window/process/runtime/tree/state/geometry. No SetFocus, global input, password input, frontend fallback or retries. Return is effect=unverified; new observation must confirm. Value is not audited in plaintext.",
      schema({"target_id": STR, "observation_id": STR, "control_id": STR,
              "action": {"type": "string", "enum": ["invoke", "set_value", "select", "expand", "collapse", "scroll"]},
              "value": {"type": "string", "maxLength": 2048}, "horizontal": SCROLL_AMOUNT, "vertical": SCROLL_AMOUNT},
@@ -591,7 +591,8 @@ class Service:
                     "focused_control_ids": [node["control_id"] for node in result["nodes"] if node["state"]["has_keyboard_focus"]],
                     "selected_control_ids": [node["control_id"] for node in result["nodes"] if node.get("pattern_state", {}).get("selected") is True],
                     "focus_scope": "returned nodes only; absence does not prove no focus in the app",
-                    "supported_patterns_mean": "provider-advertised capabilities only; no action executed"}
+                    "supported_patterns_mean": "provider-advertised capabilities only; no action executed",
+                    "background_actions_mean": "refused: no dispatch; unverified: not a background safety approval. Dynamic identity/focus/lease checks still apply; no fallback."}
         if name == "control_action":
             from . import uia
             uia.validate_action(args)

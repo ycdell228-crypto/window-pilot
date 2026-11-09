@@ -62,7 +62,7 @@ class UiaActionNativeTests(unittest.TestCase):
         return self.service.call("control_action", {"target_id": token or self.token, "observation_id": tree["observation_id"],
                                                     "control_id": node["control_id"], "action": action, **parameters})
 
-    def test_five_pattern_effects_and_single_use(self):
+    def test_pattern_effects_wpf_value_refusal_and_single_use(self):
         before = self.observe()
         result = self.act(before, "invoke-button", "invoke")
         self.assertEqual(result["status"], "provider_returned", result)
@@ -75,11 +75,14 @@ class UiaActionNativeTests(unittest.TestCase):
         self.assertEqual(self.node(after, "invoke-status")["name"], "Invoked: 1")
         self.evidence.append({"action": "invoke", "verified": "Invoked: 1", "diagnostic": result["desktop_observation"]})
         sample = "fixture acceptance value 42"
+        old_value_echo = self.node(after, "value-status")["name"]
         result = self.act(after, "value-field", "set_value", value=sample)
-        self.assertEqual(result["status"], "provider_returned", result)
+        self.assertEqual(result["status"], "rejected", result)
+        self.assertEqual(result["error"], "UIA_BACKGROUND_WPF_SET_VALUE_REFUSED")
+        self.assertFalse(result["action_attempted"])
         after = self.observe()
-        self.assertEqual(self.node(after, "value-status")["name"], "Value echo: " + sample)
-        self.evidence.append({"action": "set_value", "verified": "fixture echo matches exact synthetic input", "diagnostic": result["desktop_observation"]})
+        self.assertEqual(self.node(after, "value-status")["name"], old_value_echo)
+        self.evidence.append({"action": "set_value", "verified": "WPF refused without value change", "diagnostic": result["desktop_observation"]})
         self.assertNotIn(sample, (self.service.local / "audit.jsonl").read_text(encoding="utf8"))
         result = self.act(after, "Option-B", "select")
         self.assertEqual(result["status"], "provider_returned", result)
@@ -143,7 +146,7 @@ class UiaActionNativeTests(unittest.TestCase):
         from window_pilot import uia
         tree = self.observe()
         real_act = uia.act
-        with patch.object(uia, "act", side_effect=lambda target, observation, node, args: real_act(target, observation, node, args, timeout=0.001)):
+        with patch.object(uia, "act", side_effect=lambda target, observation, node, args, **kwargs: real_act(target, observation, node, args, timeout=0.001, **kwargs)):
             result = self.act(tree, "invoke-button", "invoke")
         self.assertEqual(result["status"], "unknown")
         self.assertTrue(self.service.faulted)
