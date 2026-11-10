@@ -26,7 +26,13 @@ export class BrowserSession {
   async observe() {
     return this.#exclusive(async () => {
       this.#state = null;
-      this.#state = await this.#browser.observe();
+      try {
+        this.#state = await this.#browser.observe();
+      } catch (error) {
+        // A later diagnostic read may recover visibility, but cannot re-enable input.
+        this.#blocked = true;
+        throw error;
+      }
       return { state: this.#state, effect_verified: false, input_blocked: this.#blocked };
     });
   }

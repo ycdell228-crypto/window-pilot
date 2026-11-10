@@ -64,6 +64,53 @@ try {
   }), /task failed/);
   assert.equal(cleanup.status.owned_process_exited, true);
   records.push({ idempotent_end: true, exception_cleanup: true });
+  // Keep the real browser and DOM. Fail one screenshot read after begin succeeds.
+  let failNextScreenshot = false, screenshotFailures = 0, observationCleanup;
+  const screenshotFaultChromium = {
+    launchServer: (...args) => chromium.launchServer(...args),
+    connect: async (...args) => {
+      const browser = await chromium.connect(...args);
+      const newContext = browser.newContext.bind(browser);
+      browser.newContext = async (...contextArgs) => {
+        const context = await newContext(...contextArgs);
+        context.on('page', page => {
+          const screenshot = page.screenshot.bind(page);
+          page.screenshot = async (...screenshotArgs) => {
+            if (failNextScreenshot) {
+              failNextScreenshot = false;
+              screenshotFailures++;
+              throw new Error('TEST_SCREENSHOT_READ_FAILED');
+            }
+            return screenshot(...screenshotArgs);
+          };
+        });
+        return context;
+      };
+      return browser;
+    },
+  };
+  try {
+    await withBrowserSession({ ...options, chromium: screenshotFaultChromium }, async owned => {
+      observationCleanup = owned;
+      await owned.begin({ url, purpose: 'diagnostic observation failure input lock regression' });
+      failNextScreenshot = true;
+      await assert.rejects(owned.observe(), /TEST_SCREENSHOT_READ_FAILED/);
+      let recovered = await owned.observe();
+      assert.equal(screenshotFailures, 1);
+      assert.equal(recovered.input_blocked, true, 'diagnostic observation recovery must not unlock input');
+      assert.equal(recovered.effect_verified, false);
+      await assert.rejects(owned.step({ control_id: control(recovered.state, 'Name'),
+        action: 'set_value', value: 'must not be written' }), /INPUT_BLOCKED/);
+      recovered = await owned.observe();
+      assert.equal(recovered.state.nodes.find(n => n.name === 'Name').value, 'original');
+      await writeFile(resolve(evidence, 'observation-recovered.png'), Buffer.from(recovered.state.image, 'base64'));
+      records.push({ diagnostic_observation_failure: true, recovered_input_blocked: true,
+        refused_input_value_unchanged: 'original', screenshot_failures: screenshotFailures });
+    });
+  } finally {
+    assert.equal(observationCleanup?.status.owned_process_exited, true);
+    records.push({ diagnostic_regression_cleanup: observationCleanup.status });
+  }
   console.log(JSON.stringify({ status: 'passed', evidence, checks: records }));
 } finally {
   await session.end();
