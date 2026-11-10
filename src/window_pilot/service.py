@@ -54,6 +54,14 @@ BACKEND = {"type": "string", "enum": ["printwindow", "wgc"]}
 SCROLL_AMOUNT = {"type": "string", "enum": ["NoAmount", "SmallIncrement", "SmallDecrement", "LargeIncrement", "LargeDecrement"]}
 
 TOOLS = [
+    ("begin_window_session", "Select an exact HWND, bind the requested background access, acquire a 60-second lease and return screenshot plus controls. Purpose is not proof of human authorization. No focus or foreground fallback. Retain session_id and state_id for one next action; partial observation blocks input. End explicitly; disconnect releases ownership.",
+     schema({"hwnd": INT, "access": {"type": "string", "enum": ["observe", "observe_and_click", "observe_and_mouse", "observe_and_control"]},
+             "purpose": STR, "capture_backend": BACKEND}, ["hwnd", "access", "purpose"])),
+    ("act_and_observe", "Execute ONE background action using session_id and the exact returned state_id; renew existing ownership, validate stored credentials and return a fresh state. action_args are the existing click/control_action parameters without target/frame/observation credentials. Keep control_id for a control action. No lease reacquisition, replay, foreground action or automatic recovery. New state is NOT effect verification. Unknown input or observation failure blocks further workflow input.",
+     schema({"session_id": STR, "state_id": STR, "tool": {"type": "string", "enum": ["click", "control_action"]},
+             "action_args": {"type": "object"}}, ["session_id", "state_id", "tool", "action_args"])),
+    ("end_window_session", "Release workflow-owned control and unbind. Idempotent. Does not close or activate the user's application; shared uncertain-input faults survive cleanup.",
+     schema({"session_id": STR}, ["session_id"])),
     ("input_control", "Executor-wide stop/status/resume for all input connections. Stop is idempotent, invalidates observations and cooperatively cancels in-flight input; already dispatched effects cannot be undone. Read-only observation/cleanup remain available. Resume ONLY after a new explicit HUMAN request, with current stop_id and confirmation; never auto-resume/restart/replay. Resume keeps unknown faults and invalidates observations again. Purpose/confirmation are caller statements, not proof of user authorization. Other executors and physical Esc are outside this tool.",
      schema({"operation": {"type": "string", "enum": ["stop", "status", "resume"]}, "stop_id": STR,
              "confirmation": {"type": "string", "enum": ["user_requested_resume"]}, "purpose": STR}, ["operation"])),
@@ -143,6 +151,8 @@ class Service:
         self.connection_id = connection_id or secrets.token_hex(16)
         self._input_ticket = None
         self._disposed = False
+        from .workflow import WindowWorkflow
+        self.workflow = WindowWorkflow(self)
         # One owner for window tokens and frame history across local MCP clients.
         import msvcrt
         self.lock = Path(lock_path or (self.local / "server.lock")).open("a+b")
@@ -225,8 +235,16 @@ class Service:
         if self._disposed:
             raise CoordinationError("CONNECTION_CLOSED")
         validate_arguments(name, args)
+        workflow_operations = {"begin_window_session": "begin", "act_and_observe": "step", "end_window_session": "end"}
+        if name in workflow_operations:
+            return self.workflow.call(workflow_operations[name], args)
         if name in ("click", "control_action", "foreground_action", "launch_app", "launch_test"):
-            self.coordinator.ensure_running()
+            try:
+                self.coordinator.ensure_running()
+            except CoordinationError as error:
+                # This gate precedes every dispatch and the action-ticket try block below.
+                error.recovery_diagnostic = {"attempt_input": "not_sent"}
+                raise
         token = args.get("target_id")
         binding = self.bindings.get(token, {})
         authorized = ((name == "click" and binding.get("access") in ("observe_and_click", "observe_and_mouse")) or
@@ -713,6 +731,11 @@ class Service:
             return
         self._disposed = True
         self.coordinator.disconnect(self.connection_id)
+        self.workflow.sessions.clear()
+        self.frames.clear()
+        self.control_observations.clear()
+        self.bindings.clear()
+        self.targets.clear()
         # Close only the project-owned fixture; never any bound user window.
         if self.fixture and self.fixture.poll() is None:
             try:
