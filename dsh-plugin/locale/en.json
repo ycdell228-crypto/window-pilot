@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Window Pilot",
-    "description": "Capture a chosen window, click in the background, and launch authorized local programs through MCP."
+    "description": "Observe and act on chosen Windows windows or isolated headless local pages through MCP."
   }
 }

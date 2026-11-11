@@ -4,7 +4,7 @@ $project = Split-Path -Parent $PSScriptRoot
 if (-not $Destination) { $Destination = Join-Path $project 'dist' }
 $destination = [IO.Path]::GetFullPath($Destination)
 [IO.Directory]::CreateDirectory($destination) | Out-Null
-$archive = Join-Path $destination 'window-pilot-0.1.0-source.zip'
+$archive = Join-Path $destination 'window-pilot-0.2.0-source.zip'
 if (Test-Path -LiteralPath $archive) { throw 'Archive already exists; inspect it before replacing' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::Open($archive, [IO.Compression.ZipArchiveMode]::Create)

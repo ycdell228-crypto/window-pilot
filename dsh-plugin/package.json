@@ -1,7 +1,7 @@
 {
   "name": "window-pilot-dsh",
-  "version": "0.1.0",
-  "description": "Window Pilot：指定窗口截图、后台点击与管理员程序启动，复用本机 MCP 服务。",
+  "version": "0.2.0",
+  "description": "Window Pilot：窗口三步操作、截图与文字读取、有限后台输入及独立无头浏览器，复用本机 MCP 服务。",
   "type": "module",
   "main": "index.js",
   "exports": {

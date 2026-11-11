@@ -1,10 +1,10 @@
 # Window Pilot
 
-让 Codex、DSH 等 MCP 客户端观察和操作指定的 Windows 窗口。
+让 Codex、DSH 等 MCP 客户端操作指定的 Windows 窗口和独立无头浏览器。
 
-Window Pilot 提供窗口截图、控件与文字读取、后台点击和有限的后台文字输入，也支持独立授权的前台操作。模型通过 MCP 选择目标窗口、读取状态、执行动作，再观察结果，组成可核实的桌面操作流程。
+Window Pilot 提供窗口截图、控件与文字读取、后台点击和有限的后台文字输入，也可在独立无头 Chrome 中填写明确允许的本地网页表单。常规任务按“选择并观察 → 执行一次动作并读取新状态 → 结束”推进；需要前台交互时使用独立授权的前台操作。
 
-[快速开始](#快速开始) · [Codex 接入](docs/CODEX.md) · [DSH 接入](docs/DSH.md) · [能力范围](docs/BACKGROUND-INPUT-REVIEW.md) · [版本发布](https://github.com/ycdell228-crypto/window-pilot/releases)
+[快速开始](#快速开始) · [Codex 接入](docs/CODEX.md) · [DSH 接入](docs/DSH.md) · [浏览器接入](docs/BROWSER-MCP.md) · [应用授权](docs/APPLICATION-AUTHORIZATION.md) · [版本发布](https://github.com/ycdell228-crypto/window-pilot/releases)
 
 ## 能做什么
 
@@ -17,9 +17,24 @@ Window Pilot 提供窗口截图、控件与文字读取、后台点击和有限�
 | 独立无头浏览器 | 在明确配置的本地 HTTP 站点完成表单操作，不接管用户浏览器 |
 | 前台交互 | 独立授权后激活窗口、点击、输入文字、使用快捷键和拖拽 |
 | 协调与停止 | 同一执行端内共享窗口操作权，跨连接停止输入，并为未知结果提供恢复流程 |
+| 访问策略 | 可配置应用或站点范围、授权期限与撤回；默认兼容模式，严格 grant 模式需明确启用 |
 | 启动程序 | 管理员模式下启动用户指定的本地程序，可配置启动开关与路径白名单 |
 
 截图限定在绑定窗口的客户区。后台输入会拒绝正在前台的目标、同进程窗口及同窗口族。每次输入使用新鲜的单次观察，动作后需要重新读取并确认效果。
+
+## 获取 v0.2.0
+
+| 源码入口 | 对应能力 |
+| --- | --- |
+| [v0.2.0 预发布](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.2.0) | 本次 19 项 MCP 工具，包含 Windows 三步流程、浏览器会话与应用访问策略 |
+| [main 源码](https://github.com/ycdell228-crypto/window-pilot/archive/refs/heads/main.zip) | 后续更新；具体能力以当前提交为准 |
+| [v0.1.0 历史预发布](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.1.0) | 固定标签的 13 项工具；下载包内容以该版本说明为准 |
+
+以下快速开始使用 **v0.2.0 源码**，包版本为 `0.2.0`。浏览器默认关闭，需自行准备 Node、Playwright、Chrome 并配置精确允许的本地 HTTP 站点。
+
+2026-11-11 功能交付包含普通回归 62 通过、0 失败、21 个跳过入口，以及 wheel 19 工具契约和已安装 wheel 的 11 项真实无头浏览器验证；[对应 CI](https://github.com/ycdell228-crypto/window-pilot/actions/runs/42997662173) 已通过。支持场景、测试事故与未验证范围见[交付记录](docs/DELIVERY-2026-11-11.md)。
+
+相对 v0.1.0，还增加了统一文字观察、关联窗口发现、标准 Edit 原生文字操作、后台输入保护、共享停止、证据保留及启动限制。[完整版本对比](docs/RELEASE-v0.2.0.md#相对-v010-的完整变化)区分了新增能力、既有能力和兼容性收紧。
 
 ## 快速开始
 
@@ -30,11 +45,11 @@ Window Pilot 提供窗口截图、控件与文字读取、后台点击和有限�
 在 PowerShell 中运行以下命令。
 
 ```powershell
-git clone https://github.com/ycdell228-crypto/window-pilot.git
+git clone --branch v0.2.0 --single-branch https://github.com/ycdell228-crypto/window-pilot.git
 cd window-pilot
 .\scripts\build-wheel.ps1 -Python python
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --no-index .\dist\window_pilot-0.1.0-py3-none-any.whl
+.\.venv\Scripts\python.exe -m pip install --no-index .\dist\window_pilot-0.2.0-py3-none-any.whl
 ```
 
 pipx 安装、可选依赖和卸载步骤见[安装指南](docs/INSTALL.md)。
