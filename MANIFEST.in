@@ -1,2 +1,5 @@
 include scripts/runtime_entry.py
 include scripts/uia-*.ps1
+include scripts/browser-worker.mjs
+include scripts/browser-session.mjs
+include scripts/browser-background.mjs

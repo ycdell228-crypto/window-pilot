@@ -3,7 +3,8 @@ from pathlib import Path
 
 
 def runtime_script(name):
-    if name not in {"runtime_entry.py", "uia-observe.ps1", "uia-focus.ps1", "uia-fixture.ps1", "uia-foreground-fixture.ps1"}:
+    if name not in {"runtime_entry.py", "uia-observe.ps1", "uia-focus.ps1", "uia-fixture.ps1", "uia-foreground-fixture.ps1",
+                    "browser-worker.mjs", "browser-session.mjs", "browser-background.mjs"}:
         raise ValueError("UNKNOWN_RUNTIME_RESOURCE")
     package = Path(__file__).resolve().parent
     bundled = package / "_resources" / name

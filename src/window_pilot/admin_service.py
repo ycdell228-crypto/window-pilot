@@ -40,6 +40,7 @@ def identity():
 def source_digest(service_file):
     root = Path(__file__).resolve().parents[2]
     paths = sorted(Path(__file__).parent.glob("*.py")) + [root / "scripts/runtime_entry.py", Path(service_file)] + sorted((root / "scripts").glob("uia-*.ps1"))
+    paths += [root / 'scripts' / name for name in ('browser-worker.mjs', 'browser-session.mjs', 'browser-background.mjs')]
     value = hashlib.sha256()
     for path in paths:
         value.update(str(path).encode("utf8"))

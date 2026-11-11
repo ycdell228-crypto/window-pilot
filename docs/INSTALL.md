@@ -2,6 +2,8 @@
 
 适用交互式Windows 10/11、Python 3.12+。wheel提供普通权限stdio MCP；管理员服务与DSH原生插件安装仍使用保留的源码目录和对应脚本，分别审查后执行，不能把pipx安装称为管理员服务安装。
 
+当前 main 源码声明19项工具；既有 v0.1.0 标签仍为13项工具的冻结版本。浏览器默认关闭，外部 Node、Playwright、Chrome 需按[浏览器接入](BROWSER-MCP.md)另行配置。最新验证范围见[交付记录](DELIVERY-2026-11-11.md)。
+
 ## 1. 从本地源码构建wheel
 
 在下载解压或克隆的源码目录运行：
@@ -29,7 +31,7 @@ python -m venv .venv
 .\.venv\Scripts\window-pilot.exe --help
 ```
 
-wheel包含UIA/focus/fixture与隔离截图子进程所需的运行文件；普通stdio模式不要求保持源码目录。`-I -S`子进程仍只显式加载自己的安装环境。代码所在目录与数据目录分离；日志、原图与回执写入所选config所在目录的.local，不写入site-packages。
+wheel包含UIA/focus/fixture、隔离截图子进程和三个浏览器 mjs 运行文件；普通stdio模式不要求保持源码目录。`-I -S`子进程仍只显式加载自己的安装环境。代码所在目录与数据目录分离；日志、原图与回执写入所选config所在目录的.local，不写入site-packages。
 
 需要可重建的本地源码包时，用`scripts/package.ps1 -Destination <新目录>`生成包含setup.py、MANIFEST.in和运行脚本的源码ZIP；脚本保留已有文件拒绝覆盖的行为。源码ZIP、wheel及测试截图都留在Git忽略目录，发布附件需另行确认。
 
@@ -57,7 +59,7 @@ window-pilot serve --config 'C:\path\to\pilot-data\config.json'
 python scripts/verify-wheel.py dist/window_pilot-0.1.0-py3-none-any.whl --evidence .local/wheel-smoke
 ```
 
-该检查在临时venv安装真正wheel、从非源码目录启动console入口，验证15项工具、普通模式拒绝程序启动及隔离子进程导入。另加`--native`会显示并关闭项目自己的测试窗口，验证真实PrintWindow截图和只读UIA；不发键鼠输入、不安装管理员服务、不连接现有执行端。输出wheel-smoke.json；原生模式另有installed-fixture.png。需要交互桌面权限时应在用户已同意的环境执行，不用普通CI绿灯替代。
+该检查在临时venv安装真正wheel、从非源码目录启动console入口，验证19项工具、普通模式拒绝程序启动及隔离子进程导入。另加`--native`会显示并关闭项目自己的测试窗口，验证真实PrintWindow截图和只读UIA；不发键鼠输入、不安装管理员服务、不连接现有执行端。输出wheel-smoke.json；原生模式另有installed-fixture.png。需要交互桌面权限时应在用户已同意的环境执行，不用普通CI绿灯替代。
 
 卸载pipx应用用`pipx uninstall window-pilot`；venv方式在宿主移除该MCP配置并停止进程后可移除自己创建的venv。两者均不卸载另行安装的管理员任务，也不删除config目录中的证据或去重回执，管理员回退见[ADMIN_SERVICE](ADMIN_SERVICE.md)。
 

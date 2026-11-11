@@ -357,7 +357,7 @@ class WindowWorkflowStdioTests(unittest.TestCase):
             try:
                 rpc('initialize', {'protocolVersion': '2025-06-18'})
                 tools = rpc('tools/list', {})['tools']
-                self.assertEqual(len(tools), 18)
+                self.assertEqual(len(tools), 19)
                 self.assertTrue({'begin_window_session', 'act_and_observe', 'end_window_session'} <=
                                 {tool['name'] for tool in tools})
                 launched = call('launch_test')

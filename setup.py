@@ -10,7 +10,8 @@ class BuildPy(build_py):
         scripts = Path(__file__).resolve().parent / "scripts"
         destination = Path(self.build_lib) / "window_pilot" / "_resources"
         destination.mkdir(parents=True, exist_ok=True)
-        for path in [scripts / "runtime_entry.py", *sorted(scripts.glob("uia-*.ps1"))]:
+        for path in [scripts / "runtime_entry.py", *sorted(scripts.glob("uia-*.ps1")),
+                     *(scripts / name for name in ("browser-worker.mjs", "browser-session.mjs", "browser-background.mjs"))]:
             self.copy_file(str(path), str(destination / path.name))
 
 

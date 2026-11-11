@@ -17,6 +17,9 @@ class Result(unittest.TextTestResult):
 
 
 if __name__ == "__main__":
+    # Desktop input must be explicitly requested, even on an interactive developer machine.
+    if os.environ.get('WINDOW_PILOT_NATIVE_TESTS') != '1':
+        os.environ['CI'] = '1'
     root = Path(__file__).resolve().parents[1]
     suite = unittest.defaultTestLoader.discover(str(root / "tests"))
     result = unittest.TextTestRunner(verbosity=2, resultclass=Result).run(suite)

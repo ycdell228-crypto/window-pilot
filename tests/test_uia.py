@@ -25,6 +25,8 @@ class UiaSourceGuardTests(unittest.TestCase):
             scripts = root / "scripts"
             scripts.mkdir()
             (scripts / "runtime_entry.py").write_text("# fixture entry")
+            for name in ('browser-worker.mjs', 'browser-session.mjs', 'browser-background.mjs'):
+                (scripts / name).write_text('// fixture browser resource')
             worker = scripts / "uia-observe.ps1"
             worker.write_text("# fixture worker v1")
             manifest = root / "service.json"
@@ -33,6 +35,9 @@ class UiaSourceGuardTests(unittest.TestCase):
                 before = admin_service.source_digest(manifest)
                 worker.write_text("# fixture worker v2")
                 self.assertNotEqual(before, admin_service.source_digest(manifest))
+                browser_before = admin_service.source_digest(manifest)
+                (scripts / 'browser-session.mjs').write_text('// changed browser lifecycle')
+                self.assertNotEqual(browser_before, admin_service.source_digest(manifest))
 
 
 @unittest.skipUnless(sys.platform == "win32", "requires Windows")

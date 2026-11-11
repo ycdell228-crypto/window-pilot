@@ -40,7 +40,10 @@ class InputStopTests(unittest.TestCase):
 
     def test_shared_stop_is_idempotent_and_new_input_is_refused(self):
         first = self.stop()
-        self.assertEqual(first["stop_id"], self.stop()["stop_id"])
+        repeated = self.stop()
+        self.assertTrue(first["created_by_this_call"])
+        self.assertFalse(repeated["created_by_this_call"])
+        self.assertEqual(first["stop_id"], repeated["stop_id"])
         self.assertTrue(self.services[1].call("input_control", {"operation": "status"})["stopped"])
         for service in self.services:
             with self.assertRaisesRegex(CoordinationError, "EXECUTOR_STOPPED"):
@@ -50,6 +53,33 @@ class InputStopTests(unittest.TestCase):
             self.assertIsNone(service.fixture)
         self.services[0].dispose()
         self.assertTrue(self.services[1].call("input_control", {"operation": "status"})["stopped"])
+
+    def test_stop_receipt_keeps_own_id_when_cancel_callback_replaces_stop(self):
+        c = self.coordinator
+        stopped_before_resume = None
+        replacement = None
+        exited = False
+
+        def cancel():
+            nonlocal stopped_before_resume, replacement, exited
+            if exited:
+                return
+            exited = True
+            stopped_before_resume = c.stop_status()["stop_id"]
+            c.resume_input(stopped_before_resume)
+            replacement = c.stop_input()
+
+        c.register_browser("own-receipt-fixture", cancel, lambda: exited)
+        receipt = self.stop()
+        self.assertTrue(receipt["created_by_this_call"])
+        self.assertTrue(receipt["stopped"])
+        self.assertEqual(receipt["stop_id"], stopped_before_resume)
+        self.assertTrue(replacement["created_by_this_call"])
+        self.assertNotEqual(receipt["stop_id"], replacement["stop_id"])
+        self.assertEqual(c.stop_status()["stop_id"], replacement["stop_id"])
+        with self.assertRaisesRegex(CoordinationError, "STOP_ID_MISMATCH"):
+            self.resume(receipt["stop_id"])
+        self.assertTrue(c.stop_status()["stopped"])
 
     def test_resume_requires_current_id_and_new_observations(self):
         c = self.coordinator

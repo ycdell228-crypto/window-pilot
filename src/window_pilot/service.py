@@ -54,6 +54,10 @@ BACKEND = {"type": "string", "enum": ["printwindow", "wgc"]}
 SCROLL_AMOUNT = {"type": "string", "enum": ["NoAmount", "SmallIncrement", "SmallDecrement", "LargeIncrement", "LargeDecrement"]}
 
 TOOLS = [
+    ("browser_session", "Isolated headless local-site browser session: begin opens and observes; step executes ONE set_value/click then returns a new state; observe is diagnostic; end closes owned processes. Operator browser.enabled and exact allowed_origins are required. Purpose is not human authorization proof. session_id is connection-owned, control_id comes from the latest state. Shared input_control stop terminates browser sessions, including idle sessions; resume never restarts them. Unknown outcomes stop input; never retry. New state is NOT verified success. No user browser/profile, foreground input or fallback.",
+     schema({"operation": {"type": "string", "enum": ["begin", "step", "observe", "end", "status"]},
+             "url": STR, "purpose": STR, "session_id": STR, "control_id": STR,
+             "action": {"type": "string", "enum": ["set_value", "click"]}, "value": {"type": "string", "maxLength": 2048}}, ["operation"])),
     ("begin_window_session", "Select an exact HWND, bind the requested background access, acquire a 60-second lease and return screenshot plus controls. Purpose is not proof of human authorization. No focus or foreground fallback. Retain session_id and state_id for one next action; partial observation blocks input. End explicitly; disconnect releases ownership.",
      schema({"hwnd": INT, "access": {"type": "string", "enum": ["observe", "observe_and_click", "observe_and_mouse", "observe_and_control"]},
              "purpose": STR, "capture_backend": BACKEND}, ["hwnd", "access", "purpose"])),
@@ -151,8 +155,12 @@ class Service:
         self.connection_id = connection_id or secrets.token_hex(16)
         self._input_ticket = None
         self._disposed = False
+        from .access_policy import AccessPolicy
+        self.access_policy = AccessPolicy(self.config_path)
         from .workflow import WindowWorkflow
         self.workflow = WindowWorkflow(self)
+        from .browser_service import BrowserService
+        self.browser = BrowserService(self)
         # One owner for window tokens and frame history across local MCP clients.
         import msvcrt
         self.lock = Path(lock_path or (self.local / "server.lock")).open("a+b")
@@ -235,6 +243,8 @@ class Service:
         if self._disposed:
             raise CoordinationError("CONNECTION_CLOSED")
         validate_arguments(name, args)
+        if name == 'browser_session':
+            return self.browser.call(args)
         workflow_operations = {"begin_window_session": "begin", "act_and_observe": "step", "end_window_session": "end"}
         if name in workflow_operations:
             return self.workflow.call(workflow_operations[name], args)
@@ -247,6 +257,13 @@ class Service:
                 raise
         token = args.get("target_id")
         binding = self.bindings.get(token, {})
+        if token in self.targets and name not in ('unbind_window', 'window_control'):
+            try:
+                self.access_policy.check(executable=self.targets[token].exe,
+                    access=binding.get('access', 'observe') if name in ('click', 'control_action', 'foreground_action') else 'observe')
+            except w.PilotError as error:
+                error.recovery_diagnostic = {'attempt_input': 'not_sent'}
+                raise
         authorized = ((name == "click" and binding.get("access") in ("observe_and_click", "observe_and_mouse")) or
                       (name == "control_action" and binding.get("access") == "observe_and_control") or
                       (name == "foreground_action" and binding.get("access") == "observe_and_foreground"))
@@ -525,6 +542,7 @@ class Service:
                 raise w.PilotError("WINDOW_NOT_RECENTLY_LISTED: list_windows then select an eligible HWND")
             target = w.bindable(self.enumerated[args["hwnd"]])
             access, purpose = args.get("access", "observe"), args.get("purpose", "")
+            self.access_policy.check(executable=target.exe, access=access)
             if len(purpose) > 300 or (access != "observe" and not purpose.strip()):
                 raise w.PilotError("HUMAN_TASK_PURPOSE_REQUIRED_FOR_CLICK_SCOPE: 1..300 chars")
             backend = args["capture_backend"] if "capture_backend" in args else self.default_capture_backend()
@@ -639,7 +657,7 @@ class Service:
             self.audit("control_dispatch_prepared", arguments={key: value for key, value in args.items() if key not in ("value", "keys")},
                        value_length=len(args["value"]) if "value" in args else None,
                        key_count=len(args["keys"]) if "keys" in args else None)
-            result = uia.act(target, observation, candidates[0], args, check_running=self.coordinator.ensure_running)
+            result = uia.act(target, observation, candidates[0], args, check_running=lambda: self.check_input_policy(target, 'observe_and_control'))
             if result["status"] == "unknown":
                 for affected in tokens:
                     self.bindings[affected]["input_faulted"] = True
@@ -667,7 +685,7 @@ class Service:
             self.invalidate_window_observations(target, frames=True)
             binding["awaiting_observation"] = True
             result = w.click(target, frame["size"], args["x"], args["y"],
-                             check_running=self.coordinator.ensure_running,
+                             check_running=lambda: self.check_input_policy(target, self.bindings[args['target_id']]['access']),
                              before_dispatch=lambda evidence: self.audit("click_dispatch_prepared",
                                  target_id=args["target_id"], frame_id=args["frame_id"], click_evidence=evidence),
                              **{key: args[key] for key in ("action", "axis", "steps", "end_x", "end_y") if key in args})
@@ -688,7 +706,7 @@ class Service:
                 self.invalidate_window_observations(target, frames=True)
                 self.audit("foreground_dispatch_prepared", target_id=token, action=args["action"],
                            text_length=len(args.get("text", "")), key_count=len(args.get("keys", [])))
-            return {**foreground.act(target, frame["size"], args, begin, check_running=self.coordinator.ensure_running), "target_id": token}
+            return {**foreground.act(target, frame["size"], args, begin, check_running=lambda: self.check_input_policy(target, 'observe_and_foreground')), "target_id": token}
         if name == "launch_app":
             if not self.allow_app_launch:
                 raise w.PilotError("ADMIN_EXECUTOR_REQUIRED: unavailable in ordinary direct stdio; no per-call UAC")
@@ -726,11 +744,16 @@ class Service:
             return {"closed": True}
         raise w.PilotError("UNKNOWN_TOOL")
 
+    def check_input_policy(self, target, access):
+        self.coordinator.ensure_running()
+        self.access_policy.check(executable=target.exe, access=access)
+
     def dispose(self):
         if self._disposed:
             return
         self._disposed = True
         self.coordinator.disconnect(self.connection_id)
+        self.browser.dispose()
         self.workflow.sessions.clear()
         self.frames.clear()
         self.control_observations.clear()

@@ -67,6 +67,49 @@ class Coordinator:
         self._foreground = False
         self._background = 0
         self._stop_id = None
+        self._browser_workers = {}
+        self._browser_active = 0
+        self._browser_faults = set()
+        self._browser_origins_active = set()
+
+    def require_browser_origin(self, origin):
+        with self._lock:
+            if origin in self._browser_faults:
+                raise CoordinationError('BROWSER_ORIGIN_INPUT_UNKNOWN: no new session or replay; manual review required')
+
+    def fault_browser_origin(self, origin):
+        with self._lock:
+            self._browser_faults.add(origin)
+
+    def register_browser(self, key, cancel, exited):
+        with self._lock:
+            self.ensure_running()
+            self._browser_workers = {k: v for k, v in self._browser_workers.items() if not v[1]()}
+            if len(self._browser_workers) >= 32:
+                raise CoordinationError('BROWSER_EXECUTOR_CAPACITY')
+            self._browser_workers[key] = (cancel, exited)
+
+    @contextmanager
+    def browser_command(self, origin=None, *, input=True):
+        with self._lock:
+            self.ensure_running()
+            if input and origin is not None:
+                self.require_browser_origin(origin)
+            if origin is not None and origin in self._browser_origins_active:
+                raise CoordinationError('BROWSER_ORIGIN_OPERATION_IN_FLIGHT')
+            if self._foreground:
+                raise CoordinationError('FOREGROUND_INPUT_IN_FLIGHT')
+            if origin is not None:
+                self._browser_origins_active.add(origin)
+            self._background += 1
+            self._browser_active += 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._background -= 1
+                self._browser_active -= 1
+                self._browser_origins_active.discard(origin)
 
     def ensure_running(self):
         with self._lock:
@@ -76,23 +119,31 @@ class Coordinator:
     def stop_status(self):
         with self._lock:
             return {"stopped": self._stop_id is not None, "stop_id": self._stop_id,
-                    "in_flight": sum(state.active is not None for state in self._windows.values()),
+                    "in_flight": self._browser_active + sum(state.active is not None for state in self._windows.values()),
+                    "browser_cleanup_pending": sum(not exited() for _, exited in self._browser_workers.values()) if self._stop_id else 0,
                     "scope": "all input connections in this executor; not other executors",
                     "read_only_observation_allowed": True}
 
     def stop_input(self):
         with self._lock:
+            created_by_this_call = self._stop_id is None
             if self._stop_id is None:
                 self._stop_id = secrets.token_hex(16)
                 for state in self._windows.values():
                     state.epoch += 1
-            return self.stop_status()
+            workers = list(self._browser_workers.values())
+            receipt = {**self.stop_status(), 'created_by_this_call': created_by_this_call}
+        # Do not hold the coordinator lock while notifying a process of cancellation.
+        for cancel, _ in workers:
+            cancel()
+        return receipt
 
     def resume_input(self, stop_id):
         with self._lock:
             if self._stop_id is None or stop_id != self._stop_id:
                 raise CoordinationError("STOP_ID_MISMATCH: read current stop status")
-            if any(state.active is not None for state in self._windows.values()):
+            if (self._browser_active or any(state.active is not None for state in self._windows.values())
+                    or any(not exited() for _, exited in self._browser_workers.values())):
                 raise CoordinationError("STOP_STILL_IN_FLIGHT: wait for native work and cleanup")
             self._stop_id = None
             for state in self._windows.values():

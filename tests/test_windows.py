@@ -194,7 +194,7 @@ class ProtocolTests(unittest.TestCase):
             self.assertEqual(rows[0]["result"]["serverInfo"]["name"], "window-pilot")
             self.assertNotIn("DSH", rows[0]["result"]["instructions"])
             self.assertEqual({tool["name"] for tool in rows[1]["result"]["tools"]},
-                             {"begin_window_session", "act_and_observe", "end_window_session", "input_control", "get_window_state", "health", "window_control", "list_windows", "bind_window", "unbind_window", "observe", "observe_controls", "control_action",
+                             {"browser_session", "begin_window_session", "act_and_observe", "end_window_session", "input_control", "get_window_state", "health", "window_control", "list_windows", "bind_window", "unbind_window", "observe", "observe_controls", "control_action",
                               "click", "foreground_action", "launch_app", "launch_test", "close_test"})
             for row in rows[2:]:
                 self.assertTrue(row["result"]["isError"])

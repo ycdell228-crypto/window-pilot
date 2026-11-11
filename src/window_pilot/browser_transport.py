@@ -26,10 +26,31 @@ class BrowserTransport:
         self._ended = False
         self._broken = False
         self._replies = queue.Queue(maxsize=2)
-        self.process = subprocess.Popen([str(node), str(worker)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        from .browser_job import BrowserJob
+        self._job = BrowserJob()
+        self._cleanup_done = threading.Event()
+        try:
+            self.process = subprocess.Popen([str(node), str(worker)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+            # The worker launches Chrome only after a request; assignment precedes every request.
+            self._job.assign(self.process.pid)
+        except Exception:
+            if hasattr(self, 'process'):
+                self.process.terminate()
+                self.process.wait(timeout=5)
+            self._job.close()
+            raise
+        threading.Thread(target=self._reap, daemon=True).start()
         self._reader = threading.Thread(target=self._read, daemon=True)
         self._reader.start()
+
+    def _reap(self):
+        self.process.wait()
+        if self._job.finish():
+            self._cleanup_done.set()
+
+    def cleanup_complete(self):
+        return self._cleanup_done.is_set()
 
     def _read(self):
         try:
@@ -42,6 +63,7 @@ class BrowserTransport:
         except (ValueError, OSError, queue.Full):
             pass
         finally:
+            self.process.stdout.close()
             try:
                 self._replies.put_nowait(None)
             except queue.Full:
@@ -107,8 +129,10 @@ class BrowserTransport:
                 self.process.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 pass
+            if self.process.poll() is not None:
+                self._cleanup_done.wait(timeout=3.1)
         return {'worker_exited': self.process.poll() is not None,
-                'cleanup': 'worker_exited' if self.process.poll() is not None else 'pending_unverified'}
+                'cleanup': 'worker_exited' if self.cleanup_complete() else 'pending_unverified'}
 
     def __enter__(self):
         return self
