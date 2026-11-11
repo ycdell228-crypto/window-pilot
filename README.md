@@ -26,7 +26,7 @@ Window Pilot 提供窗口截图、控件与文字读取、后台点击和有限�
 
 | 源码入口 | 对应能力 |
 | --- | --- |
-| [v0.2.0 预发布](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.2.0) | 本次 19 项 MCP 工具，包含 Windows 三步流程、浏览器会话与应用访问策略 |
+| [v0.2.0 正式版](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.2.0) | 本次 19 项 MCP 工具，包含 Windows 三步流程、浏览器会话与应用访问策略 |
 | [main 源码](https://github.com/ycdell228-crypto/window-pilot/archive/refs/heads/main.zip) | 后续更新；具体能力以当前提交为准 |
 | [v0.1.0 历史预发布](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.1.0) | 固定标签的 13 项工具；下载包内容以该版本说明为准 |
 
