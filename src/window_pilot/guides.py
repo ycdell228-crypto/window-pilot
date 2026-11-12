@@ -15,6 +15,14 @@ def list_guides():
     return [{"uri": PREFIX + name, "name": name, "mimeType": "text/markdown"} for name in FILES]
 
 
+def guides_available():
+    """Availability means every shipped guide can currently be read as nonempty UTF-8."""
+    try:
+        return all((guide_root() / name).read_text(encoding="utf8").strip() for name in FILES)
+    except (OSError, UnicodeError):
+        return False
+
+
 def read_guide(uri):
     if not isinstance(uri, str) or uri not in {PREFIX + name for name in FILES}:
         raise ValueError("UNKNOWN_GUIDE_URI")

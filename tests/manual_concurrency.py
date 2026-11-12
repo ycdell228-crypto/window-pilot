@@ -23,7 +23,7 @@ def main():
     foreground_apps = set()
     with tempfile.TemporaryDirectory(prefix="window-pilot-concurrency-") as folder:
         config = Path(folder) / "config.local.json"
-        config.write_text('{"window_control":{"capture_backend":"printwindow"}}', encoding="utf8")
+        config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}', encoding="utf8")
         service = Service(config)
         try:
             launched = service.call("launch_test", {})

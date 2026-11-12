@@ -34,7 +34,7 @@ class CoordinationNativeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.config = self.root / "config.json"
-        self.config.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+        self.config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
         self.fixture_owner = Service(self.config)
         self.hwnd = self.fixture_owner.call("launch_test", {})["windows"][0]["hwnd"]
         self.now = time.monotonic()
@@ -191,7 +191,7 @@ class CoordinationNativeTests(unittest.TestCase):
     def test_inflight_expiry_disconnect_and_different_window_isolation(self):
         other_root = self.root / "other"
         other_root.mkdir()
-        config = other_root / "config.json"; config.write_text("{}")
+        config = other_root / "config.json"; config.write_text('{"tools":{"profile":"legacy","self_test":true}}')
         other = Service(config)
         resume = threading.Event()
         try:

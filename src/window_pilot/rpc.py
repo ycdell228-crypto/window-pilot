@@ -45,7 +45,8 @@ class Dispatcher:
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {"tools": [{"name": n, "description": d, "inputSchema": s} for n, d, s in TOOLS]}
+                result = {"tools": [{"name": n, "description": d, "inputSchema": s}
+                                    for n, d, s in TOOLS if self.service.tool_policy.visible(n)]}
             elif method == "resources/list":
                 result = {"resources": list_guides()}
             elif method == "resources/templates/list":
@@ -54,6 +55,7 @@ class Dispatcher:
                 result = read_guide(params.get("uri"))
             else:
                 try:
+                    self.service.tool_policy.require_public(params["name"])
                     value = self.service.call(params["name"], params.get("arguments", {}))
                     if params["name"] == "health" and self.executor:
                         value["executor"] = self.executor

@@ -61,7 +61,11 @@ class CodexStdioTests(unittest.TestCase):
         from window_pilot import win32 as w
         if (os.environ.get("CI") and os.environ.get("WINDOW_PILOT_NATIVE_TESTS") != "1") or not w.U.GetForegroundWindow():
             self.skipTest("requires an interactive local desktop")
-        generated = self.preview("--config", "config.example.json")
+        fixture_config = PROJECT / ".local/codex-native-config.json"
+        fixture_config.parent.mkdir(exist_ok=True)
+        fixture_config.write_text(json.dumps({"window_control": {"capture_backend": "printwindow"},
+                                             "tools": {"profile": "legacy", "self_test": True}}))
+        generated = self.preview("--config", str(fixture_config))
         self.assertEqual(generated.returncode, 0, generated.stderr.decode())
         server = tomllib.loads(generated.stdout.decode())["mcp_servers"]["window_pilot_next"]
         rows = queue.Queue()

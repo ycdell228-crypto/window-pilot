@@ -41,7 +41,8 @@ def main():
         subprocess.run([str(python), "-I", "-S", str(resources / "runtime_entry.py"), "--help"],
                        check=True, env=clean_env, cwd=root, stdout=subprocess.DEVNULL, timeout=15)
         config = root / "config.json"
-        config.write_text(json.dumps({"window_control": {"capture_backend": "printwindow"}, "app_launch": {"enabled": False}}))
+        config.write_text(json.dumps({"window_control": {"capture_backend": "printwindow"},
+                                      "app_launch": {"enabled": False}, "tools": {"self_test": args.native}}))
         process = subprocess.Popen([str(environment / "Scripts/window-pilot.exe"), "serve", "--config", str(config)],
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    env=clean_env, cwd=root, text=True, encoding="utf8")
@@ -78,12 +79,13 @@ def main():
                 "browser_session",
                 "begin_window_session", "act_and_observe", "end_window_session",
                 "input_control", "get_window_state", "health", "window_control",
-                "list_windows", "bind_window", "unbind_window", "observe",
-                "observe_controls", "control_action", "click", "foreground_action",
-                "launch_app", "launch_test", "close_test",
+                "list_windows", "bind_window", "unbind_window", "control_action", "click", "foreground_action",
+                "launch_app",
             }
+            if args.native:
+                expected_tools.update({"launch_test", "close_test"})
             if len(tools) != len(expected_tools) or {tool["name"] for tool in tools} != expected_tools:
-                raise RuntimeError("installed tools do not match the 19-tool public contract")
+                raise RuntimeError("installed tools do not match the selected production/development profile")
             guides = rpc("resources/list", {})["resources"]
             expected_guides = {"window-pilot://guides/" + name for name in
                                ("SKILL.md", "references/windows.md", "references/recovery.md", "references/browser.md")}
@@ -101,6 +103,8 @@ def main():
                            direct_launch_refused=True, health_checked=args.native)
             if args.native:
                 health, _ = call("health", {})
+                if not health.get("guides_available") or health.get("tools") != {"profile": "compact", "self_test": True}:
+                    raise RuntimeError("installed guide availability/tool policy does not match development configuration")
                 if health["app_launch"]["enabled"] or health["executor"]["mode"] != "direct_stdio":
                     raise RuntimeError("unexpected installed direct-mode health")
                 fixture_started = True
@@ -109,14 +113,15 @@ def main():
                 ids = {window["hwnd"] for window in windows["windows"]}
                 selected = next(window for window in launched["windows"] if window["hwnd"] in ids)
                 bound, _ = call("bind_window", {"hwnd": selected["hwnd"], "capture_backend": "printwindow"})
-                observation, contents = call("observe", {"target_id": bound["target_id"]})
+                observation, contents = call("get_window_state", {"target_id": bound["target_id"],
+                                                                  "include_related_windows": False})
                 image = next(item for item in contents["content"] if item["type"] == "image")
                 suffix = ".png" if image["mimeType"] == "image/png" else ".jpg"
                 (evidence / ("installed-fixture" + suffix)).write_bytes(base64.b64decode(image["data"]))
-                controls, _ = call("observe_controls", {"target_id": bound["target_id"]})
+                controls = observation["accessibility"]
                 if not controls.get("nodes"):
                     raise RuntimeError("installed UIA worker returned no controls: " + str(controls))
-                summary.update(frame_saved=observation["evidence_storage"]["saved"], uia_nodes=len(controls["nodes"]),
+                summary.update(frame_saved=observation["screenshot"]["evidence_storage"]["saved"], uia_nodes=len(controls["nodes"]),
                                native_scope="own UIA fixture capture and read-only controls; no input, bridge or administrator installation")
             (evidence / "wheel-smoke.json").write_text(json.dumps(summary, indent=2), encoding="utf8")
             print(json.dumps(summary), flush=True)

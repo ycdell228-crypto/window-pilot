@@ -1,4 +1,5 @@
 {
+  "tools": {"profile": "compact", "self_test": false},
   "window_control": {"capture_backend": "wgc"},
   "app_launch": {"enabled": true},
   "retention": {

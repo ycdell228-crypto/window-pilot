@@ -1,16 +1,18 @@
 # Codex stdio 接入与配置预览
 
-Window Pilot 的 `serve` 与 `bridge` 都是按行 JSON-RPC 的 stdio MCP，和 DSH 共用19项工具及 text/image 交付。Codex 不需要安装 DSH 原生包。运行环境是同一用户的交互式 Windows 10/11、Python 3.12+；不是 WSL、云端或锁屏桌面。WGC/Pillow 依赖仍按 README 显式准备，PrintWindow 自有窗口验证无需第三方依赖。
+Window Pilot 的 `serve` 与 `bridge` 都是按行 JSON-RPC 的 stdio MCP，和DSH共用默认15项生产工具及text/image交付。Codex 不需要安装 DSH 原生包。运行环境是同一用户的交互式 Windows 10/11、Python 3.12+；不是 WSL、云端或锁屏桌面。WGC/Pillow 依赖仍按 README 显式准备，PrintWindow 自有窗口验证无需第三方依赖。
 
 配置字段依据 [OpenAI 官方 MCP 文档](https://developers.openai.com/codex/mcp/)（2026-10-28核对）：`mcp_servers`、`command`、`args`、`cwd`、`env`、`enabled` 和超时字段。官方支持用户级 `~/.codex/config.toml` 和项目级 `.codex/config.toml`；实际加载受本机版本、项目信任和管理员策略影响。生成 TOML 和协议通过不等于当前 Codex 已加载或模型已看见图片。
 
 ## 当前功能与更新
 
-工具描述保留硬约束，长流程按需读取：首次使用读取 MCP 资源 `window-pilot://guides/SKILL.md`，再按任务选择 `window-pilot://guides/references/windows.md`、`window-pilot://guides/references/recovery.md` 或 `window-pilot://guides/references/browser.md`。这些资源只交付指南，不执行输入或改变授权；19项工具的名称和参数不变。无需安装 DSH 技能或改 Codex 配置。恢复/浏览器指南无法读取时，停止对应操作；不要凭精简描述推测完整恢复步骤。
+v0.2.2默认15项生产工具，观察统一使用get_window_state；tools.profile=legacy恢复两个旧观察入口，tools.self_test=true才开启两个自测入口。health新增guides_available与tools状态，不要求模型必须读过指南。配置和兼容范围见[工具集说明](TOOL-SURFACE.md)。旧客户端需使用observe／observe_controls时，设置tools.profile=legacy后重连。
 
-当前服务声明19项工具，包含 Windows 三步流程、`browser_session`、`get_window_state` 与 `input_control`。最新交付及验证边界见[2026-11-11交付记录](DELIVERY-2026-11-11.md)，此前后台输入范围见[2026-11-09版本说明](RELEASE-BACKGROUND-2026-11-09.md)。已有源码 bridge 安装更新时，先核对并备份当前源码、服务清单和宿主配置，停止本安装执行端，再部署已验收源码并启动原有专用任务。使用新 bridge 连接重新初始化并读回 tools/list、health、实际PID及源码摘要，旧连接及其观察凭据不作为升级验证。
+工具描述保留硬约束，长流程按需读取：首次使用读取 MCP 资源 `window-pilot://guides/SKILL.md`，再按任务选择 `window-pilot://guides/references/windows.md`、`window-pilot://guides/references/recovery.md` 或 `window-pilot://guides/references/browser.md`。这些资源只交付指南，不执行输入或改变授权；保留工具的参数和约束不变，旧观察与自测入口按所选配置提供。无需安装 DSH 技能或改 Codex 配置。恢复/浏览器指南无法读取时，停止对应操作；不要凭精简描述推测完整恢复步骤。
 
-当前包版本为0.2.1，更新身份以发布提交与 `health.executor.code_sha256` 共同确认。Codex 的现有 bridge 配置路径有效时可继续使用该配置。浏览器已接入 MCP，默认关闭，仅限精确允许的本地 HTTP 站点；依赖与配置见[浏览器接入](BROWSER-MCP.md)。
+当前默认声明15项生产工具，包含 Windows 三步流程、`browser_session`、`get_window_state` 与 `input_control`。最新变化和验证见[0.2.2版本说明](RELEASE-v0.2.2.md)，此前功能交付边界见[2026-11-11记录](DELIVERY-2026-11-11.md)，此前后台输入范围见[2026-11-09版本说明](RELEASE-BACKGROUND-2026-11-09.md)。已有源码 bridge 安装更新时，先核对并备份当前源码、服务清单和宿主配置，停止本安装执行端，再部署已验收源码并启动原有专用任务。使用新 bridge 连接重新初始化并读回 tools/list、health、实际PID及源码摘要，旧连接及其观察凭据不作为升级验证。
+
+当前包版本为0.2.2，更新身份以发布提交与 `health.executor.code_sha256` 共同确认。Codex 的现有 bridge 配置路径有效时可继续使用该配置。浏览器已接入 MCP，默认关闭，仅限精确允许的本地 HTTP 站点；依赖与配置见[浏览器接入](BROWSER-MCP.md)。
 
 ## 先预览，不修改配置
 
@@ -53,7 +55,7 @@ PYTHONUNBUFFERED = "1"
 
 安装或迁移管理员执行端前，先审阅 [ADMIN_SERVICE](ADMIN_SERVICE.md) 的具体任务、清单、安装与回退，并核对本次授权。2026-11-11部署快照见[交付记录](DELIVERY-2026-11-11.md)，不代表任意检出已经安装。不要为验收普通 stdio 安装管理员任务。普通直连支持一个服务所有者；管理员端每条连接持有独立 token/帧，同一执行端共享窗口操作权、观察版本与未知故障门禁。输入前先获取操作权再新观察，流程及独立执行端边界见 [COORDINATION](COORDINATION.md)。
 
-真正接入须另行明确执行：先备份选定配置，再将审阅后的完整服务表与 env 子表合并到选定作用域，确认无同名条目且路径全为新版，明确启用 `enabled = true`，按当前客户端要求重连/重启。只加入禁用表不会出现工具。核验 MCP 状态、19项工具及 `health.executor.mode`；首次只用本项目 fixture，不能用用户应用验证安装。不要直接把预览追加到现有文件末尾造成重复表。
+真正接入须另行明确执行：先备份选定配置，再将审阅后的完整服务表与 env 子表合并到选定作用域，确认无同名条目且路径全为新版，明确启用 `enabled = true`，按当前客户端要求重连/重启。只加入禁用表不会出现工具。核验 MCP 状态、所选配置的工具集及 `health.executor.mode`；首次可验证health及指南读取；需要fixture时仅在显式self_test开发配置下使用，不能用用户应用验证安装。不要直接把预览追加到现有文件末尾造成重复表。
 
 回退：关闭该接入并重连，移除本次新增的服务表和 env 子表；如由备份恢复，先确认备份后没有其他有效修改。接入关闭使该连接 token/帧失效，不能重放动作。移除 bridge 配置不会停止独立管理员服务、删除任务或关闭用户应用；这些需要分别按已审阅服务方案处理。配置预览本身不修改宿主配置。
 

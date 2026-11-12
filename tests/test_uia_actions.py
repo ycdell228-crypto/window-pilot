@@ -20,7 +20,7 @@ class UiaActionNativeTests(unittest.TestCase):
             raise unittest.SkipTest("requires interactive local desktop")
         cls.temp = tempfile.TemporaryDirectory()
         config = Path(cls.temp.name) / "config.json"
-        config.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+        config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
         cls.service = Service(config)
         try:
             launched = cls.service.call("launch_test", {"kind": "uia"})
@@ -160,7 +160,7 @@ class UiaActionNativeTests(unittest.TestCase):
         # A separate fixture/connection: the real provider runs, then one local diagnostic fails.
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.json"
-            config.write_text("{}")
+            config.write_text('{"tools":{"profile":"legacy","self_test":true}}')
             service = Service(config)
             try:
                 launched = service.call("launch_test", {"kind": "uia"})
@@ -192,7 +192,7 @@ class UiaChangedTreeNativeTests(unittest.TestCase):
             self.skipTest("requires interactive local desktop")
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.json"
-            config.write_text("{}")
+            config.write_text('{"tools":{"profile":"legacy","self_test":true}}')
             service = Service(config)
             try:
                 launched = service.call("launch_test", {})

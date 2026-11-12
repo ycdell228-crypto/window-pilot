@@ -35,7 +35,7 @@ class WindowStateNativeTests(unittest.TestCase):
             raise unittest.SkipTest("requires interactive local desktop")
         cls.temp = tempfile.TemporaryDirectory()
         config = Path(cls.temp.name) / "config.json"
-        config.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+        config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
         cls.service = Service(config)
         try:
             result = cls.service.call("launch_test", {"kind": "uia"})
@@ -163,7 +163,7 @@ class NativeEditSelectionTests(unittest.TestCase):
             self.skipTest("requires interactive local desktop")
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.json"
-            config.write_text('{}')
+            config.write_text('{"tools":{"profile":"legacy","self_test":true}}')
             service = Service(config)
             try:
                 hwnd = service.call("launch_test", {})["windows"][0]["hwnd"]

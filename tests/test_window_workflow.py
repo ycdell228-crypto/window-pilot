@@ -37,7 +37,7 @@ class WindowWorkflowNativeTests(unittest.TestCase):
         self.root = EVIDENCE / self._testMethodName
         self.root.mkdir(parents=True, exist_ok=True)
         self.config = self.root / 'config.json'
-        self.config.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+        self.config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
         self.owner = Service(self.config, self.root / 'fixture.lock')
         self.hwnd = self.owner.call('launch_test', {})['windows'][0]['hwnd']
         self.now = time.monotonic()
@@ -317,7 +317,7 @@ class WindowWorkflowStdioTests(unittest.TestCase):
         root = EVIDENCE / 'stdio'
         root.mkdir(parents=True, exist_ok=True)
         config = root / 'config.json'
-        config.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+        config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
         replies = queue.Queue()
         events = []
         sequence = 0

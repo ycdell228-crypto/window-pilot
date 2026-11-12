@@ -33,7 +33,7 @@ class GuideTests(unittest.TestCase):
         replies = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual([row["id"] for row in replies], list(range(1, len(requests) + 1)))
         self.assertIn("resources", replies[0]["result"]["capabilities"])
-        self.assertEqual(len(replies[1]["result"]["tools"]), 19)
+        self.assertEqual(len(replies[1]["result"]["tools"]), 15)
         self.assertEqual([row["uri"] for row in replies[2]["result"]["resources"]], uris)
         self.assertEqual(replies[3]["result"], {"resourceTemplates": []})
         for reply, uri in zip(replies[4:8], uris):

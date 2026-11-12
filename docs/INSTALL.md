@@ -2,7 +2,7 @@
 
 适用交互式Windows 10/11、Python 3.12+。wheel提供普通权限stdio MCP；管理员服务与DSH原生插件安装仍使用保留的源码目录和对应脚本，分别审查后执行，不能把pipx安装称为管理员服务安装。
 
-v0.2.1 与当前 main 源码声明19项工具；既有 v0.1.0 标签仍为13项工具的冻结版本。浏览器默认关闭，外部 Node、Playwright、Chrome 需按[浏览器接入](BROWSER-MCP.md)另行配置。最新验证范围见[交付记录](DELIVERY-2026-11-11.md)。
+v0.2.2默认15项生产工具，旧观察与自测入口由[工具集配置](TOOL-SURFACE.md)控制；v0.2.1标签仍固定19项工具。既有v0.1.0标签仍为13项工具的冻结版本。浏览器默认关闭，外部Node、Playwright、Chrome需按[浏览器接入](BROWSER-MCP.md)另行配置。此前验证范围见[交付记录](DELIVERY-2026-11-11.md)。
 
 ## 1. 从本地源码构建wheel
 
@@ -12,14 +12,14 @@ v0.2.1 与当前 main 源码声明19项工具；既有 v0.1.0 标签仍为13项�
 .\scripts\build-wheel.ps1 -Python 'C:\path\to\python.exe'
 ```
 
-得到`dist/window_pilot-0.2.1-py3-none-any.whl`及SHA-256。构建脚本遇到已有wheel会拒绝覆盖，改用新的-Destination目录。v0.2.1 Release 提供冻结标签的源码 ZIP/tar.gz；wheel 按上述命令本地构建，目前不提供 PyPI 包。v0.1.0 标签和历史源码包保留不变。
+得到`dist/window_pilot-0.2.2-py3-none-any.whl`及SHA-256。构建脚本遇到已有wheel会拒绝覆盖，改用新的-Destination目录。v0.2.2 Release 提供冻结标签的源码 ZIP/tar.gz；wheel 按上述命令本地构建，目前不提供 PyPI 包。v0.1.0 标签和历史源码包保留不变。
 
 ## 2. 隔离安装，二选一
 
 已经安装pipx的用户：
 
 ```powershell
-pipx install '.\dist\window_pilot-0.2.1-py3-none-any.whl'
+pipx install '.\dist\window_pilot-0.2.2-py3-none-any.whl'
 window-pilot --help
 ```
 
@@ -27,7 +27,7 @@ window-pilot --help
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --no-index '.\dist\window_pilot-0.2.1-py3-none-any.whl'
+.\.venv\Scripts\python.exe -m pip install --no-index '.\dist\window_pilot-0.2.2-py3-none-any.whl'
 .\.venv\Scripts\window-pilot.exe --help
 ```
 
@@ -56,10 +56,10 @@ window-pilot serve --config 'C:\path\to\pilot-data\config.json'
 ## 验证与卸载
 
 ```powershell
-python scripts/verify-wheel.py dist/window_pilot-0.2.1-py3-none-any.whl --evidence .local/wheel-smoke
+python scripts/verify-wheel.py dist/window_pilot-0.2.2-py3-none-any.whl --evidence .local/wheel-smoke
 ```
 
-该检查在临时venv安装真正wheel、从非源码目录启动console入口，验证19项工具、普通模式拒绝程序启动及隔离子进程导入。另加`--native`会显示并关闭项目自己的测试窗口，验证真实PrintWindow截图和只读UIA；不发键鼠输入、不安装管理员服务、不连接现有执行端。输出wheel-smoke.json；原生模式另有installed-fixture.png。需要交互桌面权限时应在用户已同意的环境执行，不用普通CI绿灯替代。
+该检查在临时venv安装真正wheel、从非源码目录启动console入口，验证默认15项工具、普通模式拒绝程序启动及隔离子进程导入。另加`--native`会在临时开发配置中显式打开自测入口（共17项工具），显示并关闭项目自己的测试窗口，验证真实PrintWindow截图和只读UIA；不发键鼠输入、不安装管理员服务、不连接现有执行端。输出wheel-smoke.json；原生模式另有installed-fixture.png。需要交互桌面权限时应在用户已同意的环境执行，不用普通CI绿灯替代。
 
 卸载pipx应用用`pipx uninstall window-pilot`；venv方式在宿主移除该MCP配置并停止进程后可移除自己创建的venv。两者均不卸载另行安装的管理员任务，也不删除config目录中的证据或去重回执，管理员回退见[ADMIN_SERVICE](ADMIN_SERVICE.md)。
 

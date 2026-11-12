@@ -22,7 +22,7 @@ class InputStopTests(unittest.TestCase):
             folder = Path(self.temp.name) / name
             folder.mkdir()
             config = folder / "config.json"
-            config.write_text('{}')
+            config.write_text('{"tools":{"profile":"legacy","self_test":true}}')
             self.services.append(Service(config, coordinator=self.coordinator, connection_id=name))
         self.target = w.Identity(123, 45, 67, "fixture.exe", 89, "Fixture")
 
@@ -157,7 +157,7 @@ class InputStopNativeTests(unittest.TestCase):
             self.skipTest("requires interactive local desktop")
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.json"
-            config.write_text('{}')
+            config.write_text('{"tools":{"profile":"legacy","self_test":true}}')
             c = Coordinator(shared=True)
             service = Service(config, coordinator=c, connection_id="native-stop")
             try:

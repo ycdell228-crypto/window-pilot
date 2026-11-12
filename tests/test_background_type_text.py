@@ -28,7 +28,7 @@ class TypeTextNativeTests(unittest.TestCase):
             self.skipTest("requires interactive local desktop")
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.json"
-            config.write_text('{}')
+            config.write_text('{"tools":{"profile":"legacy","self_test":true}}')
             service = Service(config)
             try:
                 hwnd = service.call("launch_test", {})["windows"][0]["hwnd"]

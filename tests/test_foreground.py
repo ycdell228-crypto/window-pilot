@@ -22,7 +22,7 @@ class ForegroundNativeTests(unittest.TestCase):
         cls.evidence=[]
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(); self.root=Path(self.temp.name)
-        self.config=self.root/'config.json';self.config.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+        self.config=self.root/'config.json';self.config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
         self.owner=Service(self.config)
         self.addCleanup(self.temp.cleanup)
         self.addCleanup(self.owner.dispose)
@@ -190,7 +190,7 @@ class ForegroundNativeTests(unittest.TestCase):
                                  production_budget_seconds=18,elapsed_ms=round(elapsed*1000),ctrl_released=True))
     def test_desktop_gate_excludes_competing_input_across_windows(self):
         # Second genuine native window. Existing production factory remains in use.
-        config2=self.root/'other.json'; config2.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+        config2=self.root/'other.json'; config2.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
         other=Service(config2,lock_path=self.root/'other-owner.lock');self.addCleanup(other.dispose)
         hwnd=other.call('launch_test',{})['windows'][0]['hwnd']
         token=self.bind(self.b,'observe_and_click',hwnd)

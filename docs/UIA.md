@@ -1,5 +1,7 @@
 # 只读 Windows UI Automation 观察
 
+v0.2.2默认通过get_window_state读取截图和控件。本文涉及旧observe／observe_controls接口的示例需tools.profile=legacy；新配置与返回字段见[工具集说明](TOOL-SURFACE.md)。
+
 本文描述只读工具；现有控件操作另见 [UIA_ACTIONS](UIA_ACTIONS.md)，需独立的 `observe_and_control` 授权。原只读和左键授权不自动扩展。
 
 `observe_controls` 在已绑定的精确窗口下读取有界 Control View 控件树。默认只读绑定即可使用；它不输入、不激活、不调用 Invoke/SetValue/Select/Expand/Scroll，不读取全局 focused element 或从桌面根开始搜索。截图仍使用原有 `observe`，没有改用桌面截图。

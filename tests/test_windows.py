@@ -26,7 +26,7 @@ class NativeTests(unittest.TestCase):
             raise unittest.SkipTest("No interactive foreground desktop")
         cls.temp = tempfile.TemporaryDirectory()
         cls.config = Path(cls.temp.name) / "config.local.json"
-        cls.config.write_text('{"window_control":{"capture_backend":"printwindow"}}', encoding="utf8")
+        cls.config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}', encoding="utf8")
         cls.service = Service(cls.config)
         launched = cls.service.call("launch_test", {})
         cls.hwnd = launched["windows"][0]["hwnd"]
@@ -175,7 +175,7 @@ class ProtocolTests(unittest.TestCase):
     def test_stdio_handshake_tools_and_removed_tools_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "config.local.json"
-            config.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+            config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
             requests = [
                 {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}}},
                 {"jsonrpc": "2.0", "method": "notifications/initialized"},

@@ -54,7 +54,7 @@ class BackgroundKeyNativeTests(unittest.TestCase):
                 for name in ("a", "b"):
                     config = Path(folder) / name / "config.json"
                     config.parent.mkdir()
-                    config.write_text('{}')
+                    config.write_text('{"tools":{"profile":"legacy","self_test":true}}')
                     services.append(Service(config, coordinator=coordinator, connection_id=name))
                 service, other = services
                 hwnd = service.call("launch_test", {})["windows"][0]["hwnd"]

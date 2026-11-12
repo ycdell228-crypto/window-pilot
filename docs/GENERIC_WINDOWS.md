@@ -1,5 +1,7 @@
 # 通用窗口接口：DSH 直接试用
 
+v0.2.2默认通过get_window_state读取截图和控件。本文涉及旧observe／observe_controls接口的示例需tools.profile=legacy；新配置与返回字段见[工具集说明](TOOL-SURFACE.md)。
+
 新版已有只读 `observe_controls` 和独立授权的 `control_action`，当前共13项工具，详见 [UIA](UIA.md)、[UIA_ACTIONS](UIA_ACTIONS.md)。以下截图/定向点击流程仍适用；文中旧“9项检查”属于历史交付范围，不能视为新版客户端或UIA验收。
 
 现有click还可在独立 `observe_and_mouse` 授权下使用右键/左键双击/双轴滚轮，见 [MOUSE_ACTIONS](MOUSE_ACTIONS.md)。旧 `observe_and_click` 仍仅授予默认左键一次，下面流程不自动扩大权限。

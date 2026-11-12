@@ -48,7 +48,7 @@ class UiaNativeTests(unittest.TestCase):
             raise unittest.SkipTest("requires an interactive local desktop")
         cls.temp = tempfile.TemporaryDirectory()
         config = Path(cls.temp.name) / "config.json"
-        config.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+        config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
         cls.service = Service(config)
         try:
             fixture = cls.service.call("launch_test", {})

@@ -27,7 +27,7 @@ class MouseNativeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         config = Path(self.temp.name) / "config.json"
-        config.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+        config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
         self.service = Service(config)
         try:
             fixture = self.service.call("launch_test", {})

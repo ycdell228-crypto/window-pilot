@@ -33,7 +33,7 @@ class RecoveryNativeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         config = self.root / "config.json"
-        config.write_text('{"window_control":{"capture_backend":"printwindow"}}')
+        config.write_text('{"window_control":{"capture_backend":"printwindow"},"tools":{"profile":"legacy","self_test":true}}')
         self.fixture = Service(config)
         self.hwnd = self.fixture.call("launch_test", {})["windows"][0]["hwnd"]
         self.coordinator = Coordinator()
