@@ -1,6 +1,6 @@
 {
   "name": "window-pilot-dsh",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Window Pilot：窗口三步操作、截图与文字读取、有限后台输入及独立无头浏览器，复用本机 MCP 服务。",
   "type": "module",
   "main": "index.js",
@@ -9,7 +9,7 @@
     "./package.json": "./package.json",
     "./locale/*": "./locale/*"
   },
-  "files": ["index.js", "cordis.patch.yml", "locale", "README.md", "LICENSE"],
+  "files": ["index.js", "skill.js", "skills", "cordis.patch.yml", "locale", "README.md", "LICENSE"],
   "license": "MIT",
   "engines": {"node": ">=22.15"},
   "peerDependencies": {"@deepseek-ai/dsh-mcp-client": ">=0.2.1-rc.2"},

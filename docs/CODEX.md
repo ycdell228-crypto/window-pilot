@@ -6,9 +6,11 @@ Window Pilot 的 `serve` 与 `bridge` 都是按行 JSON-RPC 的 stdio MCP，和 
 
 ## 当前功能与更新
 
+工具描述保留硬约束，长流程按需读取：首次使用读取 MCP 资源 `window-pilot://guides/SKILL.md`，再按任务选择 `window-pilot://guides/references/windows.md`、`window-pilot://guides/references/recovery.md` 或 `window-pilot://guides/references/browser.md`。这些资源只交付指南，不执行输入或改变授权；19项工具的名称和参数不变。无需安装 DSH 技能或改 Codex 配置。恢复/浏览器指南无法读取时，停止对应操作；不要凭精简描述推测完整恢复步骤。
+
 当前服务声明19项工具，包含 Windows 三步流程、`browser_session`、`get_window_state` 与 `input_control`。最新交付及验证边界见[2026-11-11交付记录](DELIVERY-2026-11-11.md)，此前后台输入范围见[2026-11-09版本说明](RELEASE-BACKGROUND-2026-11-09.md)。已有源码 bridge 安装更新时，先核对并备份当前源码、服务清单和宿主配置，停止本安装执行端，再部署已验收源码并启动原有专用任务。使用新 bridge 连接重新初始化并读回 tools/list、health、实际PID及源码摘要，旧连接及其观察凭据不作为升级验证。
 
-当前包版本为0.2.0，更新身份以发布提交与 `health.executor.code_sha256` 共同确认。Codex 的现有 bridge 配置路径有效时可继续使用该配置。浏览器已接入 MCP，默认关闭，仅限精确允许的本地 HTTP 站点；依赖与配置见[浏览器接入](BROWSER-MCP.md)。
+当前包版本为0.2.1，更新身份以发布提交与 `health.executor.code_sha256` 共同确认。Codex 的现有 bridge 配置路径有效时可继续使用该配置。浏览器已接入 MCP，默认关闭，仅限精确允许的本地 HTTP 站点；依赖与配置见[浏览器接入](BROWSER-MCP.md)。
 
 ## 先预览，不修改配置
 

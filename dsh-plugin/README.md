@@ -7,3 +7,5 @@
 bundle 包名为 `window-pilot-dsh`，唯一插件行 ID 为 `window-pilot-mcp`，MCP 命名空间仍为 `window_pilot`。安装会迁移本项目原有的通用 MCP 插入项，避免重复加载。原生卡片开关由 DSH 插件管理器提供：关闭后撤下该连接的工具，开启后建立新连接；旧 token/帧不恢复。
 
 关闭卡片不停止、禁用或删除独立管理员服务，也不提升 DSH。无 HMR 的 profile 中，DSH 会提示需要重启；按其实际提示生效。当前包装没有新增输入策略或游戏流程。
+
+宿主提供 skills 服务时，卡片同时注册 `window-pilot` 技能；停用时一并撤销。技能只有短简介常驻，正文及恢复/浏览器引用按需读取。没有 skills 服务时可从 MCP 资源 `window-pilot://guides/SKILL.md` 读取同一份指南。源码和 wheel 都包含指南；本包只负责技能注册与原 MCP 接入，不自动更改宿主配置。

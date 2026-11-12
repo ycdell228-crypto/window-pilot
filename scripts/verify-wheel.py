@@ -84,6 +84,16 @@ def main():
             }
             if len(tools) != len(expected_tools) or {tool["name"] for tool in tools} != expected_tools:
                 raise RuntimeError("installed tools do not match the 19-tool public contract")
+            guides = rpc("resources/list", {})["resources"]
+            expected_guides = {"window-pilot://guides/" + name for name in
+                               ("SKILL.md", "references/windows.md", "references/recovery.md", "references/browser.md")}
+            if {item["uri"] for item in guides} != expected_guides:
+                raise RuntimeError("installed workflow guides are missing")
+            for uri in expected_guides:
+                content = rpc("resources/read", {"uri": uri})["contents"][0]
+                if content["uri"] != uri or not content["text"].strip():
+                    raise RuntimeError("installed workflow guide is unreadable")
+            summary["workflow_guides_read"] = len(guides)
             rejected = rpc("tools/call", {"name": "launch_app", "arguments": {"exe": str(python), "purpose": "direct-mode refusal check", "request_id": "wheel-smoke-refusal"}})
             if not rejected.get("isError") or "ADMIN_EXECUTOR_REQUIRED" not in rejected["content"][0]["text"]:
                 raise RuntimeError("ordinary installed stdio did not reject launch")

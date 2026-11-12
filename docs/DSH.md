@@ -24,7 +24,7 @@ Set-Location C:\your-project\window-pilot
 
 卡片关闭会撤销此 MCP 接入的工具并断开对应连接，开启会建立新连接；旧 token/帧不恢复，也不重放未完成操作。关闭卡片不会停止/禁用/删除独立管理员服务或其任务，不关闭已启动的用户程序，不提升整个 DSH。服务生命周期仍由 [管理员服务脚本](ADMIN_SERVICE.md#停止禁用卸载和恢复) 的明确操作控制。
 
-插件包只复用 DSH 自带 `@deepseek-ai/dsh-mcp-client` 的 Config/inject/apply；没有新增工具、输入模式、前台操作或游戏业务。先确认只有一个 `window_pilot` 命名空间，再调用 health：管理员模式应报告实际 `executor.mode=administrator_service`、`is_administrator=true`。不要通过启动游戏来验收插件安装。
+插件包复用 DSH 自带 `@deepseek-ai/dsh-mcp-client` 的 Config/inject/apply，并在宿主提供 skills 服务时注册 `window-pilot` 技能。目录只显示短简介，正文按需加载；恢复和浏览器长流程分别放在引用文件中。没有 skills 服务时仍可读取 MCP 资源 `window-pilot://guides/SKILL.md` 及其中引用的指南；没有新增输入工具或权限。接入格式按本机 DSH 0.2.2-rc.1 的 skill provider 接口核对，旧版本原生加载未复测。先确认只有一个 `window_pilot` 命名空间，再调用 health：管理员模式应报告实际 `executor.mode=administrator_service`、`is_administrator=true`。不要通过启动游戏来验收插件安装。
 
 ## 原通用 MCP 配置（不提供独立原生卡片）
 

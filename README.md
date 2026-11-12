@@ -22,15 +22,18 @@ Window Pilot 提供窗口截图、控件与文字读取、后台点击和有限�
 
 截图限定在绑定窗口的客户区。后台输入会拒绝正在前台的目标、同进程窗口及同窗口族。每次输入使用新鲜的单次观察，动作后需要重新读取并确认效果。
 
-## 获取 v0.2.0
+## 获取 v0.2.1
 
 | 源码入口 | 对应能力 |
 | --- | --- |
-| [v0.2.0 正式版](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.2.0) | 本次 19 项 MCP 工具，包含 Windows 三步流程、浏览器会话与应用访问策略 |
+| [v0.2.1 正式版](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.2.1) | 19 项工具，精简描述，Windows／恢复／浏览器指南按需加载 |
+| [v0.2.0](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.2.0) | 包含 Windows 三步流程、浏览器会话与应用访问策略的上一正式版本 |
 | [main 源码](https://github.com/ycdell228-crypto/window-pilot/archive/refs/heads/main.zip) | 后续更新；具体能力以当前提交为准 |
 | [v0.1.0 历史预发布](https://github.com/ycdell228-crypto/window-pilot/releases/tag/v0.1.0) | 固定标签的 13 项工具；下载包内容以该版本说明为准 |
 
-以下快速开始使用 **v0.2.0 源码**，包版本为 `0.2.0`。浏览器默认关闭，需自行准备 Node、Playwright、Chrome 并配置精确允许的本地 HTTP 站点。
+以下快速开始使用 **v0.2.1 源码**，包版本为 `0.2.1`。浏览器默认关闭，需自行准备 Node、Playwright、Chrome 并配置精确允许的本地 HTTP 站点。
+
+v0.2.1 将工具说明中的长流程移到按需指南：DSH 通过 `window-pilot` 技能加载，Codex 等 MCP 客户端读取同一份只读资源。19项工具及参数不变，授权、未知停输与禁止前台兜底等约束保留。普通回归63通过、0失败，21个原生入口跳过，技能注册/注销及wheel指南读取通过；[版本说明](docs/RELEASE-v0.2.1.md)列出描述文本比较和验证范围。
 
 2026-11-11 功能交付包含普通回归 62 通过、0 失败、21 个跳过入口，以及 wheel 19 工具契约和已安装 wheel 的 11 项真实无头浏览器验证；[对应 CI](https://github.com/ycdell228-crypto/window-pilot/actions/runs/42997662173) 已通过。支持场景、测试事故与未验证范围见[交付记录](docs/DELIVERY-2026-11-11.md)。
 
@@ -45,11 +48,11 @@ Window Pilot 提供窗口截图、控件与文字读取、后台点击和有限�
 在 PowerShell 中运行以下命令。
 
 ```powershell
-git clone --branch v0.2.0 --single-branch https://github.com/ycdell228-crypto/window-pilot.git
+git clone --branch v0.2.1 --single-branch https://github.com/ycdell228-crypto/window-pilot.git
 cd window-pilot
 .\scripts\build-wheel.ps1 -Python python
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --no-index .\dist\window_pilot-0.2.0-py3-none-any.whl
+.\.venv\Scripts\python.exe -m pip install --no-index .\dist\window_pilot-0.2.1-py3-none-any.whl
 ```
 
 pipx 安装、可选依赖和卸载步骤见[安装指南](docs/INSTALL.md)。

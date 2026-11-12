@@ -5,8 +5,9 @@ import json
 
 from . import __version__
 from .service import INSTRUCTIONS, TOOLS
+from .guides import list_guides, read_guide
 
-METHODS = {"initialize", "ping", "tools/list", "tools/call"}
+METHODS = {"initialize", "ping", "tools/list", "tools/call", "resources/list", "resources/read", "resources/templates/list"}
 PROTOCOLS = {"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28"}
 
 
@@ -39,12 +40,18 @@ class Dispatcher:
             if method == "initialize":
                 offered = params.get("protocolVersion")
                 result = {"protocolVersion": offered if offered in PROTOCOLS else "2025-03-26",
-                          "capabilities": {"tools": {}}, "serverInfo": {"name": "window-pilot", "version": __version__},
-                          "instructions": INSTRUCTIONS + "\nConnection loss never authorizes retry. Old tokens must not be automatically rebound."}
+                          "capabilities": {"tools": {}, "resources": {}}, "serverInfo": {"name": "window-pilot", "version": __version__},
+                          "instructions": INSTRUCTIONS}
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
                 result = {"tools": [{"name": n, "description": d, "inputSchema": s} for n, d, s in TOOLS]}
+            elif method == "resources/list":
+                result = {"resources": list_guides()}
+            elif method == "resources/templates/list":
+                result = {"resourceTemplates": []}
+            elif method == "resources/read":
+                result = read_guide(params.get("uri"))
             else:
                 try:
                     value = self.service.call(params["name"], params.get("arguments", {}))

@@ -13,6 +13,11 @@ class BuildPy(build_py):
         for path in [scripts / "runtime_entry.py", *sorted(scripts.glob("uia-*.ps1")),
                      *(scripts / name for name in ("browser-worker.mjs", "browser-session.mjs", "browser-background.mjs"))]:
             self.copy_file(str(path), str(destination / path.name))
+        guides = scripts.parent / "dsh-plugin" / "skills" / "window-pilot"
+        for path in sorted(guides.rglob("*.md")):
+            target = Path(self.build_lib) / "window_pilot" / "_guides" / path.relative_to(guides)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            self.copy_file(str(path), str(target))
 
 
 setup(cmdclass={"build_py": BuildPy})
